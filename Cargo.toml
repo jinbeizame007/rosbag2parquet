@@ -3,4 +3,7 @@ name = "rosbag2parquet"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+mcap = "0.23.1"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
