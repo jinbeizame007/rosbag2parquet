@@ -26,11 +26,13 @@ pub struct RosField {
     pub data_type: RosDataType,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum RosDataType {
     Primitive(Primitive),
     Complex(String),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Primitive {
     Bool,
     Byte,
@@ -95,22 +97,18 @@ fn parse_msg_definition(schema_text: &str) -> Result<()> {
 // }
 
 fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
+    // First try to parse as a primitive type
+    if let Ok((rest, prim)) = primitive_type(input) {
+        return Ok((rest, RosDataType::Primitive(prim)));
+    }
+    
+    // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
-        pair(
-            opt(terminated(identifier, tag("/"))),
+        recognize(pair(
             identifier,
-        ),
-        |(pkg, type_name)| {
-            if let Some(pkg_name) = pkg {
-                RosDataType::Complex(format!("{}/{}", pkg_name, type_name))
-            } else {
-                // Try to parse as primitive type first
-                match primitive_type(type_name) {
-                    Ok((_, prim)) => RosDataType::Primitive(prim),
-                    Err(_) => RosDataType::Complex(type_name.to_string()),
-                }
-            }
-        },
+            many0(pair(tag("/"), identifier))
+        )),
+        |full_type: &str| RosDataType::Complex(full_type.to_string()),
     );
     parser.parse(input)
 }
@@ -180,5 +178,21 @@ mod tests {
 
         // Cleanup
         std::fs::remove_file(test_path).unwrap();
+    }
+
+    #[test]
+    fn test_ros_data_type() {
+        let input = "float64";
+        let (rest, data_type) = ros_data_type(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(data_type, RosDataType::Primitive(Primitive::Float64));
+
+        let input = "sensor_msgs/msg/Temperature";
+        let (rest, data_type) = ros_data_type(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(
+            data_type,
+            RosDataType::Complex("sensor_msgs/msg/Temperature".to_string())
+        );
     }
 }
