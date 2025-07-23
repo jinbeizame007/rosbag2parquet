@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.98"
+camino = "1.1.10"
 mcap = "0.23.1"
+memmap2 = "0.9.7"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
