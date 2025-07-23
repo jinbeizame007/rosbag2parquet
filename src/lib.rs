@@ -4,12 +4,48 @@ use anyhow::{Context, Result};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take_while1},
+    character::complete::{alpha1, alphanumeric1},
+    combinator::{map, opt, recognize},
+    multi::many0,
+    sequence::{pair, preceded, terminated},
+    IResult, Parser,
+};
 
 mod create_test_data;
 
-fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
-    let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
-    unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
+pub struct RosMsgDefinition {
+    pub name: String,
+    pub fields: Vec<RosField>,
+}
+
+pub struct RosField {
+    pub name: String,
+    pub data_type: RosDataType,
+}
+
+pub enum RosDataType {
+    Primitive(Primitive),
+    Complex(String),
+}
+
+pub enum Primitive {
+    Bool,
+    Byte,
+    Char,
+    Float32,
+    Float64,
+    Int8,
+    UInt8,
+    Int16,
+    UInt16,
+    Int32,
+    UInt32,
+    Int64,
+    UInt64,
+    String { upper_bound: Option<usize> },
 }
 
 fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
@@ -32,6 +68,90 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
+    let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
+    unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
+}
+
+fn parse_msg_definition(schema_text: &str) -> Result<()> {
+    // let mut fields = Vec::new();
+    // let mut constants = Vec::new();
+
+    for (_line_num, line) in schema_text.lines().enumerate() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.starts_with("float64") {}
+    }
+
+    Ok(())
+}
+
+// fn field_definition(input: &str) -> IResult<&str, RosField> {
+//     map(separated_pair(ros_data_type, sp, identifier))
+// }
+
+fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
+    let mut parser = map(
+        pair(
+            opt(terminated(identifier, tag("/"))),
+            identifier,
+        ),
+        |(pkg, type_name)| {
+            if let Some(pkg_name) = pkg {
+                RosDataType::Complex(format!("{}/{}", pkg_name, type_name))
+            } else {
+                // Try to parse as primitive type first
+                match primitive_type(type_name) {
+                    Ok((_, prim)) => RosDataType::Primitive(prim),
+                    Err(_) => RosDataType::Complex(type_name.to_string()),
+                }
+            }
+        },
+    );
+    parser.parse(input)
+}
+
+fn number(input: &str) -> IResult<&str, &str> {
+    take_while1(|c: char| c.is_ascii_digit())(input)
+}
+
+fn primitive_type(input: &str) -> IResult<&str, Primitive> {
+    let mut parser = alt((
+        map(tag("bool"), |_| Primitive::Bool),
+        map(tag("byte"), |_| Primitive::Byte),
+        map(tag("char"), |_| Primitive::Char),
+        map(tag("float32"), |_| Primitive::Float32),
+        map(tag("float64"), |_| Primitive::Float64),
+        map(tag("int8"), |_| Primitive::Int8),
+        map(tag("uint8"), |_| Primitive::UInt8),
+        map(tag("int16"), |_| Primitive::Int16),
+        map(tag("uint16"), |_| Primitive::UInt16),
+        map(tag("int32"), |_| Primitive::Int32),
+        map(tag("uint32"), |_| Primitive::UInt32),
+        map(tag("int64"), |_| Primitive::Int64),
+        map(tag("uint64"), |_| Primitive::UInt64),
+        // "string" と "string<=N" の両方を処理
+        map(
+            pair(tag("string"), opt(preceded(tag("<="), number))),
+            |(_, bound)| Primitive::String {
+                upper_bound: bound.and_then(|s| s.parse().ok()),
+            },
+        ),
+    ));
+    parser.parse(input)
+}
+
+/// ROSの識別子（フィールド名、パッケージ名など）を認識する
+/// 仕様: [a-zA-Z]で始まり、英数字とアンダースコアが続く [2]
+fn identifier(input: &str) -> IResult<&str, &str> {
+    let mut parser = recognize(pair(alpha1, many0(alt((alphanumeric1, tag("_"))))));
+    parser.parse(input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,10 +162,10 @@ mod tests {
         // Create a test MCAP file
         let test_path = "testdata/test_read.mcap";
         create_test_mcap_file(test_path).unwrap();
-        
+
         let mmap = read_mcap(test_path).unwrap();
         assert!(!mmap.is_empty());
-        
+
         // Cleanup
         std::fs::remove_file(test_path).unwrap();
     }
@@ -55,9 +175,9 @@ mod tests {
         // Create a test MCAP file
         let test_path = "testdata/test_rosbag2parquet.mcap";
         create_test_mcap_file(test_path).unwrap();
-        
+
         rosbag2parquet(test_path).unwrap();
-        
+
         // Cleanup
         std::fs::remove_file(test_path).unwrap();
     }
