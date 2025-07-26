@@ -10,7 +10,7 @@ use nom::{
     character::complete::{alpha1, alphanumeric1},
     combinator::{map, opt, recognize},
     multi::many0,
-    sequence::{pair, preceded, terminated},
+    sequence::{pair, preceded},
     IResult, Parser,
 };
 
@@ -112,11 +112,11 @@ fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<
         .filter(|s| !s.is_empty())
         .collect();
 
-    for (index, raw_section) in raw_sections.iter().enumerate().rev() {
+    for (index, raw_section) in raw_sections.iter().enumerate() {
         let (type_name, content) = if index == 0 {
             (schema_name, *raw_section)
         } else {
-            let type_name = raw_section.split_whitespace().next().unwrap();
+            let type_name = raw_section.split_whitespace().nth(1).unwrap_or("");
             let first_newline = raw_section.find('\n').unwrap();
             let content_without_first_line = &raw_section[first_newline + 1..];
             (type_name, content_without_first_line)
@@ -228,5 +228,87 @@ mod tests {
             data_type,
             RosDataType::Complex("sensor_msgs/msg/Temperature".to_string())
         );
+    }
+
+    #[test]
+    fn test_parse_schema_sections_single_section() {
+        let schema_name = "geometry_msgs/msg/Vector3";
+        let schema_text = include_str!("../testdata/schema/vector3d.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].type_name, schema_name);
+
+        // ファイル全体の内容（コメント含む）を期待値とする
+        assert_eq!(sections[0].content, schema_text.trim());
+    }
+
+    #[test]
+    fn test_parse_schema_sections_multiple_sections() {
+        let schema_name = "sensor_msgs/msg/JointState";
+        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+
+        let sections = parse_schema_sections(schema_name, schema_text);
+
+        assert_eq!(sections.len(), 3);
+        assert_eq!(sections[0].type_name, schema_name);
+
+        // 最初のセクションの内容（コメント含む）を期待値とする
+        let expected_content = concat!(
+            "# This is a message that holds data to describe the state of a set of torque controlled joints.\n",
+            "#\n",
+            "# The state of each joint (revolute or prismatic) is defined by:\n",
+            "#  * the position of the joint (rad or m),\n",
+            "#  * the velocity of the joint (rad/s or m/s) and\n",
+            "#  * the effort that is applied in the joint (Nm or N).\n",
+            "#\n",
+            "# Each joint is uniquely identified by its name\n",
+            "# The header specifies the time at which the joint states were recorded. All the joint states\n",
+            "# in one message have to be recorded at the same time.\n",
+            "#\n",
+            "# This message consists of a multiple arrays, one for each part of the joint state.\n",
+            "# The goal is to make each of the fields optional. When e.g. your joints have no\n",
+            "# effort associated with them, you can leave the effort array empty.\n",
+            "#\n",
+            "# All arrays in this message should have the same size, or be empty.\n",
+            "# This is the only way to uniquely associate the joint name with the correct\n",
+            "# states.\n",
+            "\n",
+            "std_msgs/Header header\n",
+            "\n",
+            "string[] name\n",
+            "float64[] position\n",
+            "float64[] velocity\n",
+            "float64[] effort"
+        );
+        assert_eq!(sections[0].content, expected_content);
+
+        let expected_type_name = "std_msgs/Header";
+        let expected_content = concat!(
+            "# Standard metadata for higher-level stamped data types.\n",
+            "# This is generally used to communicate timestamped data\n",
+            "# in a particular coordinate frame.\n",
+            "\n",
+            "# Two-integer timestamp that is expressed as seconds and nanoseconds.\n",
+            "builtin_interfaces/Time stamp\n",
+            "\n",
+            "# Transform frame with which this data is associated.\n",
+            "string frame_id"
+        );
+        assert_eq!(sections[1].type_name, expected_type_name);
+        assert_eq!(sections[1].content, expected_content);
+
+        let expected_type_name = "builtin_interfaces/Time";
+        let expected_content = concat!(
+            "# This message communicates ROS Time defined here:\n",
+            "# https://design.ros2.org/articles/clock_and_time.html\n",
+            "\n",
+            "# The seconds component, valid over all int32 values.\n",
+            "int32 sec\n",
+            "\n",
+            "# The nanoseconds component, valid in the range [0, 10e9).\n",
+            "uint32 nanosec"
+        );
+        assert_eq!(sections[2].type_name, expected_type_name);
+        assert_eq!(sections[2].content, expected_content);
     }
 }
