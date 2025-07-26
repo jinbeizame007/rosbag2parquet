@@ -18,31 +18,31 @@ use nom::{
 mod create_test_data;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosMsgDefinition {
-    pub name: String,
-    pub fields: Vec<RosField>,
+pub struct RosMsgDefinition<'a> {
+    pub name: &'a str,
+    pub fields: Vec<RosField<'a>>,
 }
 
-impl RosMsgDefinition {
-    pub fn new(name: &str, fields: Vec<RosField>) -> RosMsgDefinition {
+impl<'a> RosMsgDefinition<'a> {
+    pub fn new(name: &'a str, fields: Vec<RosField<'a>>) -> RosMsgDefinition<'a> {
         RosMsgDefinition {
-            name: name.rsplit("/").next().unwrap().to_string(),
+            name: name.rsplit("/").next().unwrap(),
             fields,
         }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosField {
+pub struct RosField<'a> {
     pub data_type: RosDataType,
-    pub name: String,
+    pub name: &'a str,
 }
 
-impl RosField {
-    pub fn new(data_type: RosDataType, name: &str) -> RosField {
+impl<'a> RosField<'a> {
+    pub fn new(data_type: RosDataType, name: &'a str) -> RosField<'a> {
         RosField {
             data_type,
-            name: name.rsplit("/").next().unwrap().to_string(),
+            name: name.rsplit("/").next().unwrap(),
         }
     }
 }
@@ -150,12 +150,15 @@ fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<
     sections
 }
 
-fn parse_msg_definition_from_schema_section(
-    schema_sections: &[SchemaSection],
-    msg_definition_table: &mut HashMap<String, RosMsgDefinition>,
+fn parse_msg_definition_from_schema_section<'a>(
+    schema_sections: &[SchemaSection<'a>],
+    msg_definition_table: &mut HashMap<&'a str, RosMsgDefinition<'a>>,
 ) {
     for schema_section in schema_sections.iter().rev() {
-        if msg_definition_table.contains_key(schema_section.type_name) {
+        // Use the short name as the key
+        let short_name = schema_section.type_name.rsplit("/").next().unwrap();
+        
+        if msg_definition_table.contains_key(short_name) {
             continue;
         }
 
@@ -181,7 +184,7 @@ fn parse_msg_definition_from_schema_section(
         }
 
         let msg_definition = RosMsgDefinition::new(schema_section.type_name, fields);
-        msg_definition_table.insert(schema_section.type_name.to_string(), msg_definition);
+        msg_definition_table.insert(short_name, msg_definition);
     }
 }
 
@@ -372,7 +375,7 @@ mod tests {
 
         assert_eq!(msg_definition_table.len(), 1);
         assert_eq!(
-            msg_definition_table.get(schema_name),
+            msg_definition_table.get("Vector3"),
             Some(&RosMsgDefinition::new(
                 schema_name,
                 vec![
@@ -394,118 +397,88 @@ mod tests {
 
         let mut expected_msg_definition_table = HashMap::new();
 
-        let time_msg_name = "builtin_interfaces/Time"
-            .rsplit("/")
-            .next()
-            .unwrap()
-            .to_string();
         let time_msg_definition = RosMsgDefinition::new(
-            time_msg_name.rsplit("/").next().unwrap(),
+            "builtin_interfaces/Time",
             vec![
                 RosField::new(RosDataType::Primitive(Primitive::Int32), "sec"),
                 RosField::new(RosDataType::Primitive(Primitive::UInt32), "nanosec"),
             ],
         );
-        expected_msg_definition_table.insert(time_msg_name.clone(), time_msg_definition.clone());
+        expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
-        let header_msg_name = "std_msgs/Header".rsplit("/").next().unwrap().to_string();
         let header_msg_definition = RosMsgDefinition::new(
-            header_msg_name.rsplit("/").next().unwrap(),
+            "std_msgs/Header",
             vec![
-                RosField::new(RosDataType::Complex(time_msg_name.clone()), "stamp"),
+                RosField::new(RosDataType::Complex("Time".to_string()), "stamp"),
                 RosField::new(RosDataType::Primitive(Primitive::String), "frame_id"),
             ],
         );
-        expected_msg_definition_table
-            .insert(header_msg_name.clone(), header_msg_definition.clone());
+        expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
-        let vector3d_msg_name = "geometry_msgs/Vector3"
-            .rsplit("/")
-            .next()
-            .unwrap()
-            .to_string();
         let vector3d_msg_definition = RosMsgDefinition::new(
-            vector3d_msg_name.rsplit("/").next().unwrap(),
+            "geometry_msgs/Vector3",
             vec![
                 RosField::new(RosDataType::Primitive(Primitive::Float64), "x"),
                 RosField::new(RosDataType::Primitive(Primitive::Float64), "y"),
                 RosField::new(RosDataType::Primitive(Primitive::Float64), "z"),
             ],
         );
-        expected_msg_definition_table
-            .insert(vector3d_msg_name.clone(), vector3d_msg_definition.clone());
+        expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
 
-        let twist_msg_name = "geometry_msgs/Twist"
-            .rsplit("/")
-            .next()
-            .unwrap()
-            .to_string();
         let twist_msg_definition = RosMsgDefinition::new(
-            twist_msg_name.rsplit("/").next().unwrap(),
+            "geometry_msgs/Twist",
             vec![
-                RosField::new(
-                    RosDataType::Complex(vector3d_msg_name.rsplit("/").next().unwrap().to_string()),
-                    "linear",
-                ),
-                RosField::new(
-                    RosDataType::Complex(vector3d_msg_name.rsplit("/").next().unwrap().to_string()),
-                    "angular",
-                ),
+                RosField::new(RosDataType::Complex("Vector3".to_string()), "linear"),
+                RosField::new(RosDataType::Complex("Vector3".to_string()), "angular"),
             ],
         );
-        expected_msg_definition_table.insert(twist_msg_name.clone(), twist_msg_definition.clone());
+        expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
 
-        expected_msg_definition_table.insert(twist_msg_name.clone(), twist_msg_definition.clone());
-
-        let twist_stamped_msg_name = "geometry_msgs/msg/TwistStamped"
-            .rsplit("/")
-            .next()
-            .unwrap()
-            .to_string();
         let twist_stamped_msg_definition = RosMsgDefinition::new(
-            twist_stamped_msg_name.rsplit("/").next().unwrap(),
+            "geometry_msgs/msg/TwistStamped",
             vec![
-                RosField::new(RosDataType::Complex(header_msg_name.clone()), "header"),
-                RosField::new(RosDataType::Complex(twist_msg_name.clone()), "twist"),
+                RosField::new(RosDataType::Complex("Header".to_string()), "header"),
+                RosField::new(RosDataType::Complex("Twist".to_string()), "twist"),
             ],
         );
-        expected_msg_definition_table.insert(
-            twist_stamped_msg_name.clone(),
-            twist_stamped_msg_definition.clone(),
-        );
-
-        expected_msg_definition_table.insert(
-            twist_stamped_msg_name.clone(),
-            twist_stamped_msg_definition.clone(),
-        );
+        expected_msg_definition_table
+            .insert("TwistStamped", twist_stamped_msg_definition.clone());
 
         assert_eq!(
             msg_definition_table.len(),
             expected_msg_definition_table.len()
         );
         assert_eq!(
-            msg_definition_table.keys().collect::<HashSet<_>>(),
-            expected_msg_definition_table.keys().collect::<HashSet<_>>()
+            msg_definition_table
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+            expected_msg_definition_table
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
         );
         assert_eq!(
-            msg_definition_table.get(&time_msg_name),
-            expected_msg_definition_table.get(&time_msg_name)
+            msg_definition_table.get("Time"),
+            expected_msg_definition_table.get("Time")
         );
         assert_eq!(
-            msg_definition_table.get(&header_msg_name),
-            expected_msg_definition_table.get(&header_msg_name)
+            msg_definition_table.get("Header"),
+            expected_msg_definition_table.get("Header")
         );
         assert_eq!(
-            msg_definition_table.get(&vector3d_msg_name),
-            expected_msg_definition_table.get(&vector3d_msg_name)
+            msg_definition_table.get("Vector3"),
+            expected_msg_definition_table.get("Vector3")
         );
         assert_eq!(
-            msg_definition_table.get(&twist_msg_name),
-            expected_msg_definition_table.get(&twist_msg_name)
+            msg_definition_table.get("Twist"),
+            expected_msg_definition_table.get("Twist")
         );
         assert_eq!(
-            msg_definition_table.get(&twist_stamped_msg_name),
-            expected_msg_definition_table.get(&twist_stamped_msg_name)
+            msg_definition_table.get("TwistStamped"),
+            expected_msg_definition_table.get("TwistStamped")
         );
+
+        println!("{:?}", msg_definition_table);
     }
 }
