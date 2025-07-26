@@ -64,6 +64,8 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
 
             let schema_text = std::str::from_utf8(&schema_data)?;
             println!("Schema: {} ({})", schema_name, schema_text);
+            println!();
+            println!();
         }
     }
 
@@ -82,7 +84,7 @@ fn parse_msg_definition(schema_text: &str) -> Result<()> {
     for (_line_num, line) in schema_text.lines().enumerate() {
         let trimmed = line.trim();
 
-        if trimmed.is_empty() {
+        if trimmed.is_empty() || trimmed.starts_with("#") {
             continue;
         }
 
@@ -90,6 +92,41 @@ fn parse_msg_definition(schema_text: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct SchemaSection<'a> {
+    pub type_name: &'a str,
+    pub content: &'a str,
+}
+
+fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<SchemaSection<'a>> {
+    let mut sections = Vec::new();
+
+    let delimiter =
+        "================================================================================";
+
+    let raw_sections: Vec<&str> = schema_text
+        .split(delimiter)
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    for (index, raw_section) in raw_sections.iter().enumerate().rev() {
+        let (type_name, content) = if index == 0 {
+            (schema_name, *raw_section)
+        } else {
+            let type_name = raw_section.split_whitespace().next().unwrap();
+            let first_newline = raw_section.find('\n').unwrap();
+            let content_without_first_line = &raw_section[first_newline + 1..];
+            (type_name, content_without_first_line)
+        };
+
+        let schema_section = SchemaSection { type_name, content };
+        sections.push(schema_section);
+    }
+
+    sections
 }
 
 // fn field_definition(input: &str) -> IResult<&str, RosField> {
@@ -101,13 +138,10 @@ fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
     if let Ok((rest, prim)) = primitive_type(input) {
         return Ok((rest, RosDataType::Primitive(prim)));
     }
-    
+
     // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
-        recognize(pair(
-            identifier,
-            many0(pair(tag("/"), identifier))
-        )),
+        recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
         |full_type: &str| RosDataType::Complex(full_type.to_string()),
     );
     parser.parse(input)
@@ -171,13 +205,13 @@ mod tests {
     #[test]
     fn test_rosbag2parquet() {
         // Create a test MCAP file
-        let test_path = "testdata/test_rosbag2parquet.mcap";
-        create_test_mcap_file(test_path).unwrap();
+        let test_path = "testdata/large.mcap";
+        // create_test_mcap_file(test_path).unwrap();
 
         rosbag2parquet(test_path).unwrap();
 
         // Cleanup
-        std::fs::remove_file(test_path).unwrap();
+        // std::fs::remove_file(test_path).unwrap();
     }
 
     #[test]
