@@ -215,7 +215,28 @@ impl PrimitiveValue {
                     PrimitiveValue::UInt64(value)
                 }
             },
-            Primitive::String => PrimitiveValue::String("dummy".to_string()),
+            Primitive::String => match endianess {
+                Endianess::BigEndian => {
+                    let byte_length = BigEndian::read_u32(&data[0..4]);
+                    let bytes = &data[4..4 + byte_length as usize];
+                    let bytes_without_null = match bytes.split_last() {
+                        None => bytes,
+                        Some((null_char, contents)) => contents,
+                    };
+                    let value = std::str::from_utf8(bytes_without_null).unwrap();
+                    PrimitiveValue::String(value.to_string())
+                }
+                Endianess::LittleEndian => {
+                    let byte_length = LittleEndian::read_u32(&data[0..4]);
+                    let bytes = &data[4..4 + byte_length as usize];
+                    let bytes_without_null = match bytes.split_last() {
+                        None => bytes,
+                        Some((null_char, contents)) => contents,
+                    };
+                    let value = std::str::from_utf8(bytes_without_null).unwrap();
+                    PrimitiveValue::String(value.to_string())
+                }
+            },
         }
     }
 }
