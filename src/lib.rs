@@ -298,9 +298,18 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
     let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
 
     let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
-    for (schema_name, schema_data) in &schema_map {
-        let ros_msg_value = cdr_deserializer.parse(schema_name, schema_data);
-        ros_msg_values.push(ros_msg_value);
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
+            if schema_name != "Vector3" {
+                continue;
+            }
+            let ros_msg_value = cdr_deserializer.parse(&schema_name, &message.data);
+            ros_msg_values.push(ros_msg_value);
+        }
     }
 
     Ok(ros_msg_values)
@@ -412,7 +421,7 @@ pub enum Endianess {
 }
 
 pub struct CdrDeserializer<'a> {
-    data: &'a [u8],
+    position: usize,
     msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>,
     endianess: Endianess,
 }
@@ -420,50 +429,52 @@ pub struct CdrDeserializer<'a> {
 impl<'a> CdrDeserializer<'a> {
     pub fn new(msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>) -> Self {
         Self {
-            data: &[],
+            position: 0,
             msg_definition_table,
             endianess: Endianess::BigEndian,
         }
     }
 
-    fn next_bytes(&mut self, count: usize) -> &[u8] {
-        let bytes = &self.data[..count];
-        self.data = &self.data[count..];
-        bytes
+    fn next_bytes<'b>(&mut self, data: &'b [u8], count: usize) -> &'b [u8] {
+        self.position += count;
+        &data[self.position - count..self.position]
     }
 
-    fn parse(&mut self, name: &'a str, data: &'a [u8]) -> RosMsgValue {
+    fn parse<'b>(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
         self.endianess = if data[1] == 0x00 {
             Endianess::BigEndian
         } else {
             Endianess::LittleEndian
         };
-        self.data = &data[4..];
 
-        self.parse_without_hearder(name)
+        self.position = 4;
+
+        let ros_msg_value = self.parse_without_hearder(name, data);
+        ros_msg_value
     }
 
-    fn parse_without_hearder(&mut self, name: &'a str) -> RosMsgValue {
+    fn parse_without_hearder(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
         let mut value = RosMsgValue {
             name: name.to_string(),
             value: Vec::new(),
         };
 
-        println!("name: {}", name);
         for field in self.msg_definition_table.get(name).unwrap().fields.iter() {
-            let field_value = self.parse_field(field);
+            let field_value = self.parse_field(field, data);
             value.value.push(field_value);
         }
 
         value
     }
 
-    fn parse_field(&mut self, field: &'a RosField<'a>) -> RosFieldValue {
+    fn parse_field(&mut self, field: &'a RosField<'a>, data: &[u8]) -> RosFieldValue {
         let value = match &field.data_type {
             RosDataType::Primitive(prim) => {
-                RosDataValue::PrimitiveValue(self.parse_primitive(prim))
+                RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
             }
-            RosDataType::Complex(name) => RosDataValue::ComplexValue(self.parse_complex(name)),
+            RosDataType::Complex(name) => {
+                RosDataValue::ComplexValue(self.parse_complex(name, data))
+            }
         };
 
         RosFieldValue {
@@ -472,13 +483,38 @@ impl<'a> CdrDeserializer<'a> {
         }
     }
 
-    fn parse_primitive(&mut self, prim: &Primitive) -> PrimitiveValue {
+    fn parse_primitive(&mut self, prim: &Primitive, data: &[u8]) -> PrimitiveValue {
         let endianess = self.endianess;
-        let bytes = self.next_bytes(8);
-        PrimitiveValue::from_bytes(bytes, prim, &endianess)
+        match prim {
+            Primitive::Float64 => {
+                let bytes = self.next_bytes(data, 8);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::Float32 => {
+                let bytes = self.next_bytes(data, 4);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::Int32 | Primitive::UInt32 => {
+                let bytes = self.next_bytes(data, 4);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::Int16 | Primitive::UInt16 => {
+                let bytes = self.next_bytes(data, 2);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::String => {
+                // TODO: Fix string parsing later
+                PrimitiveValue::String("placeholder".to_string())
+            }
+            _ => {
+                // Default to 8 bytes for now
+                let bytes = self.next_bytes(data, 8);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+        }
     }
 
-    fn parse_complex(&mut self, name: &'a str) -> RosMsgValue {
+    fn parse_complex(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
         let msg_definition = self.msg_definition_table.get(name).unwrap();
         let mut ros_msg_value = RosMsgValue {
             name: name.to_string(),
@@ -486,7 +522,7 @@ impl<'a> CdrDeserializer<'a> {
         };
 
         for field in msg_definition.fields.iter() {
-            let field_value = self.parse_field(field);
+            let field_value = self.parse_field(field, data);
             ros_msg_value.value.push(field_value);
         }
 
