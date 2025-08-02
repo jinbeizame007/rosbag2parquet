@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
+use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -33,6 +35,12 @@ impl<'a> RosMsgDefinition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct RosMsgValue<'a> {
+    pub name: &'a str,
+    pub value: Vec<RosFieldValue<'a>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct RosField<'a> {
     pub data_type: RosDataType,
     pub name: &'a str,
@@ -48,9 +56,27 @@ impl<'a> RosField<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct RosFieldValue<'a> {
+    pub name: &'a str,
+    pub value: RosDataValue<'a>,
+}
+
+impl<'a> RosFieldValue<'a> {
+    pub fn new(name: &'a str, value: RosDataValue<'a>) -> RosFieldValue<'a> {
+        RosFieldValue { name, value }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum RosDataType {
     Primitive(Primitive),
     Complex(String),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum RosDataValue<'a> {
+    PrimitiveValue(PrimitiveValue),
+    ComplexValue(RosMsgValue<'a>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,6 +95,129 @@ pub enum Primitive {
     Int64,
     UInt64,
     String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PrimitiveValue {
+    Bool(bool),
+    Byte(u8),
+    Char(char),
+    Float32(f32),
+    Float64(f64),
+    Int8(i8),
+    UInt8(u8),
+    Int16(i16),
+    UInt16(u16),
+    Int32(i32),
+    UInt32(u32),
+    Int64(i64),
+    UInt64(u64),
+    String(String),
+}
+
+impl PrimitiveValue {
+    pub fn from_bytes(
+        data: &[u8],
+        primitive_type: &Primitive,
+        endianess: &Endianess,
+    ) -> PrimitiveValue {
+        match primitive_type {
+            Primitive::Bool => PrimitiveValue::Bool(data[0] == 0x01),
+            Primitive::Byte => {
+                todo!()
+            }
+            Primitive::Char => {
+                todo!()
+            }
+            Primitive::Float32 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_f32(data);
+                    PrimitiveValue::Float32(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_f32(data);
+                    PrimitiveValue::Float32(value)
+                }
+            },
+            Primitive::Float64 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_f64(data);
+                    PrimitiveValue::Float64(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_f64(data);
+                    PrimitiveValue::Float64(value)
+                }
+            },
+            Primitive::Int8 => {
+                todo!()
+            }
+            Primitive::UInt8 => {
+                todo!()
+            }
+            Primitive::Int16 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_i16(data);
+                    PrimitiveValue::Int16(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_i16(data);
+                    PrimitiveValue::Int16(value)
+                }
+            },
+            Primitive::UInt16 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_u16(data);
+                    PrimitiveValue::UInt16(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_u16(data);
+                    PrimitiveValue::UInt16(value)
+                }
+            },
+            Primitive::Int32 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_i32(data);
+                    PrimitiveValue::Int32(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_i32(data);
+                    PrimitiveValue::Int32(value)
+                }
+            },
+            Primitive::UInt32 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_u32(data);
+                    PrimitiveValue::UInt32(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_u32(data);
+                    PrimitiveValue::UInt32(value)
+                }
+            },
+            Primitive::Int64 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_i64(data);
+                    PrimitiveValue::Int64(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_i64(data);
+                    PrimitiveValue::Int64(value)
+                }
+            },
+            Primitive::UInt64 => match endianess {
+                Endianess::BigEndian => {
+                    let value = BigEndian::read_u64(data);
+                    PrimitiveValue::UInt64(value)
+                }
+                Endianess::LittleEndian => {
+                    let value = LittleEndian::read_u64(data);
+                    PrimitiveValue::UInt64(value)
+                }
+            },
+            Primitive::String => PrimitiveValue::String("dummy".to_string()),
+        }
+    }
 }
 
 fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
@@ -157,7 +306,7 @@ fn parse_msg_definition_from_schema_section<'a>(
     for schema_section in schema_sections.iter().rev() {
         // Use the short name as the key
         let short_name = schema_section.type_name.rsplit("/").next().unwrap();
-        
+
         if msg_definition_table.contains_key(short_name) {
             continue;
         }
@@ -185,6 +334,82 @@ fn parse_msg_definition_from_schema_section<'a>(
 
         let msg_definition = RosMsgDefinition::new(schema_section.type_name, fields);
         msg_definition_table.insert(short_name, msg_definition);
+    }
+}
+
+// *******************************
+// ************  CDR  ************
+// *******************************
+
+#[derive(Copy, Clone)]
+pub enum Endianess {
+    BigEndian,
+    LittleEndian,
+}
+
+pub struct CdrDeserializer<'a> {
+    data: &'a [u8],
+    msg_definition: &'a RosMsgDefinition<'a>,
+    endianess: Endianess,
+}
+
+impl<'a> CdrDeserializer<'a> {
+    pub fn new(data: &'a [u8], msg_definition: &'a RosMsgDefinition<'a>) -> Self {
+        let endianess = if data[1] == 0x00 {
+            Endianess::BigEndian
+        } else {
+            Endianess::LittleEndian
+        };
+
+        Self {
+            data: &data[4..],
+            msg_definition,
+            endianess,
+        }
+    }
+
+    fn next_bytes(&mut self, count: usize) -> &[u8] {
+        let bytes = &self.data[..count];
+        self.data = &self.data[count..];
+        bytes
+    }
+
+    fn parse(&mut self) -> RosMsgValue<'a> {
+        let mut value = RosMsgValue {
+            name: self.msg_definition.name,
+            value: Vec::new(),
+        };
+
+        for field in self.msg_definition.fields.iter() {
+            let field_value = self.parse_field(field);
+            value.value.push(field_value);
+        }
+
+        value
+    }
+
+    fn parse_field(&mut self, field: &RosField<'a>) -> RosFieldValue<'a> {
+        let value = match &field.data_type {
+            RosDataType::Primitive(prim) => {
+                RosDataValue::PrimitiveValue(self.parse_primitive(prim))
+            }
+            RosDataType::Complex(name) => RosDataValue::ComplexValue(self.parse_complex(&name)),
+        };
+
+        RosFieldValue {
+            name: field.name,
+            value,
+        }
+    }
+
+    fn parse_primitive(&mut self, prim: &Primitive) -> PrimitiveValue {
+        let endianess = self.endianess;
+        let bytes = self.next_bytes(8);
+        PrimitiveValue::from_bytes(bytes, &prim, &endianess)
+    }
+
+    fn parse_complex(&mut self, name: &str) -> RosMsgValue<'a> {
+        todo!()
     }
 }
 
@@ -441,8 +666,7 @@ mod tests {
                 RosField::new(RosDataType::Complex("Twist".to_string()), "twist"),
             ],
         );
-        expected_msg_definition_table
-            .insert("TwistStamped", twist_stamped_msg_definition.clone());
+        expected_msg_definition_table.insert("TwistStamped", twist_stamped_msg_definition.clone());
 
         assert_eq!(
             msg_definition_table.len(),
@@ -480,5 +704,56 @@ mod tests {
         );
 
         println!("{:?}", msg_definition_table);
+    }
+
+    #[test]
+    fn test_cdr_deserializer_vector3d() {
+        let vector3d_msg_definition = RosMsgDefinition::new(
+            "geometry_msgs/Vector3",
+            vec![
+                RosField::new(RosDataType::Primitive(Primitive::Float64), "x"),
+                RosField::new(RosDataType::Primitive(Primitive::Float64), "y"),
+                RosField::new(RosDataType::Primitive(Primitive::Float64), "z"),
+            ],
+        );
+
+        let header: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00];
+        let mut data_x: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut data_y: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        let mut data_z: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        BigEndian::write_f64(&mut data_x, 1.0);
+        BigEndian::write_f64(&mut data_y, 2.0);
+        BigEndian::write_f64(&mut data_z, 3.0);
+
+        let data: Vec<u8> = [
+            header.clone(),
+            data_x.clone(),
+            data_y.clone(),
+            data_z.clone(),
+        ]
+        .concat();
+
+        let mut cdr_deserializer = CdrDeserializer::new(&data, &vector3d_msg_definition);
+        let value = cdr_deserializer.parse();
+        assert_eq!(
+            value,
+            RosMsgValue {
+                name: "Vector3",
+                value: vec![
+                    RosFieldValue::new(
+                        "x",
+                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.0))
+                    ),
+                    RosFieldValue::new(
+                        "y",
+                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(2.0))
+                    ),
+                    RosFieldValue::new(
+                        "z",
+                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(3.0))
+                    ),
+                ]
+            }
+        );
     }
 }
