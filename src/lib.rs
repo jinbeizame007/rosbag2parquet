@@ -35,9 +35,9 @@ impl<'a> RosMsgDefinition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosMsgValue<'a> {
-    pub name: &'a str,
-    pub value: Vec<RosFieldValue<'a>>,
+pub struct RosMsgValue {
+    pub name: String,
+    pub value: Vec<RosFieldValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -56,13 +56,13 @@ impl<'a> RosField<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosFieldValue<'a> {
-    pub name: &'a str,
-    pub value: RosDataValue<'a>,
+pub struct RosFieldValue {
+    pub name: String,
+    pub value: RosDataValue,
 }
 
-impl<'a> RosFieldValue<'a> {
-    pub fn new(name: &'a str, value: RosDataValue<'a>) -> RosFieldValue<'a> {
+impl RosFieldValue {
+    pub fn new(name: String, value: RosDataValue) -> RosFieldValue {
         RosFieldValue { name, value }
     }
 }
@@ -74,9 +74,9 @@ pub enum RosDataType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum RosDataValue<'a> {
+pub enum RosDataValue {
     PrimitiveValue(PrimitiveValue),
-    ComplexValue(RosMsgValue<'a>),
+    ComplexValue(RosMsgValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -263,6 +263,49 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>> {
+    let mmap = read_mcap(path)?;
+
+    // First, collect all schema data
+    let mut schema_map = HashMap::new();
+    let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
+
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
+            if schema_name != "Vector3" {
+                continue;
+            }
+            if !schema_map.contains_key(&schema_name) {
+                schema_map.insert(schema_name, schema.data.clone());
+            }
+        }
+    }
+
+    // Build message definition table from collected schemas
+    let mut msg_definition_table = HashMap::new();
+    for (schema_name, schema_data) in &schema_map {
+        let schema_text = std::str::from_utf8(schema_data)?;
+        let sections = parse_schema_sections(schema_name, schema_text);
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+    }
+
+    // Process messages
+    let mut ros_msg_values = Vec::new();
+    let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
+
+    let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
+    for (schema_name, schema_data) in &schema_map {
+        let ros_msg_value = cdr_deserializer.parse(schema_name, schema_data);
+        ros_msg_values.push(ros_msg_value);
+    }
+
+    Ok(ros_msg_values)
+}
+
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
     let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
     unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
@@ -389,7 +432,7 @@ impl<'a> CdrDeserializer<'a> {
         bytes
     }
 
-    fn parse(&mut self, name: &'a str, data: &'a [u8]) -> RosMsgValue<'a> {
+    fn parse(&mut self, name: &'a str, data: &'a [u8]) -> RosMsgValue {
         self.endianess = if data[1] == 0x00 {
             Endianess::BigEndian
         } else {
@@ -400,12 +443,13 @@ impl<'a> CdrDeserializer<'a> {
         self.parse_without_hearder(name)
     }
 
-    fn parse_without_hearder(&mut self, name: &'a str) -> RosMsgValue<'a> {
+    fn parse_without_hearder(&mut self, name: &'a str) -> RosMsgValue {
         let mut value = RosMsgValue {
-            name,
+            name: name.to_string(),
             value: Vec::new(),
         };
 
+        println!("name: {}", name);
         for field in self.msg_definition_table.get(name).unwrap().fields.iter() {
             let field_value = self.parse_field(field);
             value.value.push(field_value);
@@ -414,7 +458,7 @@ impl<'a> CdrDeserializer<'a> {
         value
     }
 
-    fn parse_field(&mut self, field: &'a RosField<'a>) -> RosFieldValue<'a> {
+    fn parse_field(&mut self, field: &'a RosField<'a>) -> RosFieldValue {
         let value = match &field.data_type {
             RosDataType::Primitive(prim) => {
                 RosDataValue::PrimitiveValue(self.parse_primitive(prim))
@@ -423,7 +467,7 @@ impl<'a> CdrDeserializer<'a> {
         };
 
         RosFieldValue {
-            name: field.name,
+            name: field.name.to_string(),
             value,
         }
     }
@@ -434,10 +478,10 @@ impl<'a> CdrDeserializer<'a> {
         PrimitiveValue::from_bytes(bytes, prim, &endianess)
     }
 
-    fn parse_complex(&mut self, name: &'a str) -> RosMsgValue<'a> {
+    fn parse_complex(&mut self, name: &'a str) -> RosMsgValue {
         let msg_definition = self.msg_definition_table.get(name).unwrap();
         let mut ros_msg_value = RosMsgValue {
-            name,
+            name: name.to_string(),
             value: Vec::new(),
         };
 
@@ -776,22 +820,111 @@ mod tests {
         assert_eq!(
             value,
             RosMsgValue {
-                name: "Vector3",
+                name: "Vector3".to_string(),
                 value: vec![
                     RosFieldValue::new(
-                        "x",
+                        "x".to_string(),
                         RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.0))
                     ),
                     RosFieldValue::new(
-                        "y",
+                        "y".to_string(),
                         RosDataValue::PrimitiveValue(PrimitiveValue::Float64(2.0))
                     ),
                     RosFieldValue::new(
-                        "z",
+                        "z".to_string(),
                         RosDataValue::PrimitiveValue(PrimitiveValue::Float64(3.0))
                     ),
                 ]
             }
         );
+    }
+
+    #[test]
+    fn test_rosbag2ros_msg_values() {
+        let test_path = "rosbags/simple_rosbag/simple_rosbag_0.mcap";
+        let ros_msg_values = rosbag2ros_msg_values(test_path).unwrap();
+
+        let mut expected_ros_msg_values = Vec::new();
+
+        let vector3d_msg_value = RosMsgValue {
+            name: "Vector3".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.1)),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(2.2)),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(3.3)),
+                ),
+            ],
+        };
+        expected_ros_msg_values.push(vector3d_msg_value);
+
+        // let linear_msg_value = RosMsgValue {
+        //     name: "Vector3".to_string(),
+        //     value: vec![
+        //         RosFieldValue::new(
+        //             "x".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.2)),
+        //         ),
+        //         RosFieldValue::new(
+        //             "y".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+        //         ),
+        //         RosFieldValue::new(
+        //             "z".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+        //         ),
+        //     ],
+        // };
+
+        // let angular_msg_value = RosMsgValue {
+        //     name: "Vector3".to_string(),
+        //     value: vec![
+        //         RosFieldValue::new(
+        //             "x".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+        //         ),
+        //         RosFieldValue::new(
+        //             "y".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+        //         ),
+        //         RosFieldValue::new(
+        //             "z".to_string(),
+        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(-0.6)),
+        //         ),
+        //     ],
+        // };
+        // let twist_msg_value = RosMsgValue {
+        //     name: "Twist".to_string(),
+        //     value: vec![
+        //         RosFieldValue::new(
+        //             "linear".to_string(),
+        //             RosDataValue::ComplexValue(linear_msg_value),
+        //         ),
+        //         RosFieldValue::new(
+        //             "angular".to_string(),
+        //             RosDataValue::ComplexValue(angular_msg_value),
+        //         ),
+        //     ],
+        // };
+        // expected_ros_msg_values.push(twist_msg_value);
+
+        // let string_msg_value = RosMsgValue {
+        //     name: "String".to_string(),
+        //     value: vec![RosFieldValue::new(
+        //         "data".to_string(),
+        //         RosDataValue::PrimitiveValue(PrimitiveValue::String("Hello, world!".to_string())),
+        //     )],
+        // };
+        // expected_ros_msg_values.push(string_msg_value);
+
+        assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
+        assert_eq!(ros_msg_values, expected_ros_msg_values);
     }
 }
