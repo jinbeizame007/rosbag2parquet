@@ -370,22 +370,16 @@ pub enum Endianess {
 
 pub struct CdrDeserializer<'a> {
     data: &'a [u8],
-    msg_definition: &'a RosMsgDefinition<'a>,
+    msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>,
     endianess: Endianess,
 }
 
 impl<'a> CdrDeserializer<'a> {
-    pub fn new(data: &'a [u8], msg_definition: &'a RosMsgDefinition<'a>) -> Self {
-        let endianess = if data[1] == 0x00 {
-            Endianess::BigEndian
-        } else {
-            Endianess::LittleEndian
-        };
-
+    pub fn new(msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>) -> Self {
         Self {
-            data: &data[4..],
-            msg_definition,
-            endianess,
+            data: &[],
+            msg_definition_table,
+            endianess: Endianess::BigEndian,
         }
     }
 
@@ -395,13 +389,24 @@ impl<'a> CdrDeserializer<'a> {
         bytes
     }
 
-    fn parse(&mut self) -> RosMsgValue<'a> {
+    fn parse(&mut self, name: &'a str, data: &'a [u8]) -> RosMsgValue<'a> {
+        self.endianess = if data[1] == 0x00 {
+            Endianess::BigEndian
+        } else {
+            Endianess::LittleEndian
+        };
+        self.data = &data[4..];
+
+        self.parse_without_hearder(name)
+    }
+
+    fn parse_without_hearder(&mut self, name: &'a str) -> RosMsgValue<'a> {
         let mut value = RosMsgValue {
-            name: self.msg_definition.name,
+            name,
             value: Vec::new(),
         };
 
-        for field in self.msg_definition.fields.iter() {
+        for field in self.msg_definition_table.get(name).unwrap().fields.iter() {
             let field_value = self.parse_field(field);
             value.value.push(field_value);
         }
@@ -409,12 +414,12 @@ impl<'a> CdrDeserializer<'a> {
         value
     }
 
-    fn parse_field(&mut self, field: &RosField<'a>) -> RosFieldValue<'a> {
+    fn parse_field(&mut self, field: &'a RosField<'a>) -> RosFieldValue<'a> {
         let value = match &field.data_type {
             RosDataType::Primitive(prim) => {
                 RosDataValue::PrimitiveValue(self.parse_primitive(prim))
             }
-            RosDataType::Complex(name) => RosDataValue::ComplexValue(self.parse_complex(&name)),
+            RosDataType::Complex(name) => RosDataValue::ComplexValue(self.parse_complex(name)),
         };
 
         RosFieldValue {
@@ -426,11 +431,22 @@ impl<'a> CdrDeserializer<'a> {
     fn parse_primitive(&mut self, prim: &Primitive) -> PrimitiveValue {
         let endianess = self.endianess;
         let bytes = self.next_bytes(8);
-        PrimitiveValue::from_bytes(bytes, &prim, &endianess)
+        PrimitiveValue::from_bytes(bytes, prim, &endianess)
     }
 
-    fn parse_complex(&mut self, name: &str) -> RosMsgValue<'a> {
-        todo!()
+    fn parse_complex(&mut self, name: &'a str) -> RosMsgValue<'a> {
+        let msg_definition = self.msg_definition_table.get(name).unwrap();
+        let mut ros_msg_value = RosMsgValue {
+            name,
+            value: Vec::new(),
+        };
+
+        for field in msg_definition.fields.iter() {
+            let field_value = self.parse_field(field);
+            ros_msg_value.value.push(field_value);
+        }
+
+        ros_msg_value
     }
 }
 
@@ -737,6 +753,7 @@ mod tests {
                 RosField::new(RosDataType::Primitive(Primitive::Float64), "z"),
             ],
         );
+        let vector3d_msg_definition_table = HashMap::from([("Vector3", vector3d_msg_definition)]);
 
         let header: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00];
         let mut data_x: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
@@ -754,8 +771,8 @@ mod tests {
         ]
         .concat();
 
-        let mut cdr_deserializer = CdrDeserializer::new(&data, &vector3d_msg_definition);
-        let value = cdr_deserializer.parse();
+        let mut cdr_deserializer = CdrDeserializer::new(&vector3d_msg_definition_table);
+        let value = cdr_deserializer.parse("Vector3", &data);
         assert_eq!(
             value,
             RosMsgValue {
