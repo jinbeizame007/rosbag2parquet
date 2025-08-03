@@ -1,9 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
-use std::marker::PhantomData;
 
 use anyhow::{Context, Result};
-use byteorder::{BigEndian, ByteOrder, LittleEndian, ReadBytesExt};
+use byteorder::{BigEndian, ByteOrder, LittleEndian};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -11,9 +10,9 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
     character::complete::{alpha1, alphanumeric1},
-    combinator::{map, opt, recognize},
+    combinator::{map, recognize},
     multi::many0,
-    sequence::{pair, preceded},
+    sequence::pair,
     IResult, Parser,
 };
 
@@ -221,7 +220,7 @@ impl PrimitiveValue {
                     let bytes = &data[4..4 + byte_length as usize];
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
-                        Some((null_char, contents)) => contents,
+                        Some((_null_char, contents)) => contents,
                     };
                     let value = std::str::from_utf8(bytes_without_null).unwrap();
                     PrimitiveValue::String(value.to_string())
@@ -231,7 +230,7 @@ impl PrimitiveValue {
                     let bytes = &data[4..4 + byte_length as usize];
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
-                        Some((null_char, contents)) => contents,
+                        Some((_null_char, contents)) => contents,
                     };
                     let value = std::str::from_utf8(bytes_without_null).unwrap();
                     PrimitiveValue::String(value.to_string())
@@ -521,7 +520,7 @@ impl<'a> CdrDeserializer<'a> {
                     let bytes = self.next_bytes(data, byte_length as usize);
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
-                        Some((null_char, contents)) => contents,
+                        Some((_null_char, contents)) => contents,
                     };
                     let value = std::str::from_utf8(bytes_without_null).unwrap();
                     PrimitiveValue::String(value.to_string())
@@ -532,7 +531,7 @@ impl<'a> CdrDeserializer<'a> {
                     let bytes = self.next_bytes(data, byte_length as usize);
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
-                        Some((null_char, contents)) => contents,
+                        Some((_null_char, contents)) => contents,
                     };
                     let value = std::str::from_utf8(bytes_without_null).unwrap();
                     PrimitiveValue::String(value.to_string())
@@ -562,10 +561,6 @@ impl<'a> CdrDeserializer<'a> {
     }
 }
 
-// fn field_definition(input: &str) -> IResult<&str, RosField> {
-//     map(separated_pair(ros_data_type, sp, identifier))
-// }
-
 fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
     // First try to parse as a primitive type
     if let Ok((rest, prim)) = primitive_type(input) {
@@ -578,10 +573,6 @@ fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
         |full_type: &str| RosDataType::Complex(full_type.to_string()),
     );
     parser.parse(input)
-}
-
-fn number(input: &str) -> IResult<&str, &str> {
-    take_while1(|c: char| c.is_ascii_digit())(input)
 }
 
 fn primitive_type(input: &str) -> IResult<&str, Primitive> {
