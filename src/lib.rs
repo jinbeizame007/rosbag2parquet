@@ -486,20 +486,38 @@ impl<'a> CdrDeserializer<'a> {
     fn parse_primitive(&mut self, prim: &Primitive, data: &[u8]) -> PrimitiveValue {
         let endianess = self.endianess;
         match prim {
+            Primitive::Bool => {
+                let bytes = self.next_bytes(data, 1);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::Byte => {
+                todo!()
+            }
+            Primitive::Char => {
+                todo!()
+            }
+            Primitive::Float32 => {
+                let bytes = self.next_bytes(data, 4);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
             Primitive::Float64 => {
                 let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
-            Primitive::Float32 => {
-                let bytes = self.next_bytes(data, 4);
+            Primitive::Int8 | Primitive::UInt8 => {
+                let bytes = self.next_bytes(data, 1);
+                PrimitiveValue::from_bytes(bytes, prim, &endianess)
+            }
+            Primitive::Int16 | Primitive::UInt16 => {
+                let bytes = self.next_bytes(data, 2);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::Int32 | Primitive::UInt32 => {
                 let bytes = self.next_bytes(data, 4);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
-            Primitive::Int16 | Primitive::UInt16 => {
-                let bytes = self.next_bytes(data, 2);
+            Primitive::Int64 | Primitive::UInt64 => {
+                let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::String => {
