@@ -276,9 +276,6 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
 
         if let Some(schema) = &message.channel.schema {
             let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            if schema_name == "Twist" {
-                continue;
-            }
             if !schema_map.contains_key(&schema_name) {
                 schema_map.insert(schema_name, schema.data.clone());
             }
@@ -304,9 +301,6 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
 
         if let Some(schema) = &message.channel.schema {
             let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            if schema_name == "Twist" {
-                continue;
-            }
             let ros_msg_value = cdr_deserializer.parse(&schema_name, &message.data);
             ros_msg_values.push(ros_msg_value);
         }
@@ -920,6 +914,55 @@ mod tests {
 
         let mut expected_ros_msg_values = Vec::new();
 
+        let linear_msg_value = RosMsgValue {
+            name: "Vector3".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.2)),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                ),
+            ],
+        };
+        let angular_msg_value = RosMsgValue {
+            name: "Vector3".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(-0.6)),
+                ),
+            ],
+        };
+        let twist_msg_value = RosMsgValue {
+            name: "Twist".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "linear".to_string(),
+                    RosDataValue::ComplexValue(linear_msg_value),
+                ),
+                RosFieldValue::new(
+                    "angular".to_string(),
+                    RosDataValue::ComplexValue(angular_msg_value),
+                ),
+            ],
+        };
+        expected_ros_msg_values.push(twist_msg_value);
+
         let vector3d_msg_value = RosMsgValue {
             name: "Vector3".to_string(),
             value: vec![
@@ -938,56 +981,6 @@ mod tests {
             ],
         };
         expected_ros_msg_values.push(vector3d_msg_value);
-
-        // let linear_msg_value = RosMsgValue {
-        //     name: "Vector3".to_string(),
-        //     value: vec![
-        //         RosFieldValue::new(
-        //             "x".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.2)),
-        //         ),
-        //         RosFieldValue::new(
-        //             "y".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
-        //         ),
-        //         RosFieldValue::new(
-        //             "z".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
-        //         ),
-        //     ],
-        // };
-
-        // let angular_msg_value = RosMsgValue {
-        //     name: "Vector3".to_string(),
-        //     value: vec![
-        //         RosFieldValue::new(
-        //             "x".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
-        //         ),
-        //         RosFieldValue::new(
-        //             "y".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
-        //         ),
-        //         RosFieldValue::new(
-        //             "z".to_string(),
-        //             RosDataValue::PrimitiveValue(PrimitiveValue::Float64(-0.6)),
-        //         ),
-        //     ],
-        // };
-        // let twist_msg_value = RosMsgValue {
-        //     name: "Twist".to_string(),
-        //     value: vec![
-        //         RosFieldValue::new(
-        //             "linear".to_string(),
-        //             RosDataValue::ComplexValue(linear_msg_value),
-        //         ),
-        //         RosFieldValue::new(
-        //             "angular".to_string(),
-        //             RosDataValue::ComplexValue(angular_msg_value),
-        //         ),
-        //     ],
-        // };
-        // expected_ros_msg_values.push(twist_msg_value);
 
         let string_msg_value = RosMsgValue {
             name: "String".to_string(),
