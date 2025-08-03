@@ -276,7 +276,7 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
 
         if let Some(schema) = &message.channel.schema {
             let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            if schema_name != "Vector3" {
+            if schema_name == "Twist" {
                 continue;
             }
             if !schema_map.contains_key(&schema_name) {
@@ -304,7 +304,7 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
 
         if let Some(schema) = &message.channel.schema {
             let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            if schema_name != "Vector3" {
+            if schema_name == "Twist" {
                 continue;
             }
             let ros_msg_value = cdr_deserializer.parse(&schema_name, &message.data);
@@ -520,10 +520,30 @@ impl<'a> CdrDeserializer<'a> {
                 let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
-            Primitive::String => {
-                // TODO: Fix string parsing later
-                PrimitiveValue::String("placeholder".to_string())
-            }
+            Primitive::String => match endianess {
+                Endianess::BigEndian => {
+                    let hearder = self.next_bytes(data, 4);
+                    let byte_length = BigEndian::read_u32(hearder);
+                    let bytes = self.next_bytes(data, byte_length as usize);
+                    let bytes_without_null = match bytes.split_last() {
+                        None => bytes,
+                        Some((null_char, contents)) => contents,
+                    };
+                    let value = std::str::from_utf8(bytes_without_null).unwrap();
+                    PrimitiveValue::String(value.to_string())
+                }
+                Endianess::LittleEndian => {
+                    let hearder = self.next_bytes(data, 4);
+                    let byte_length = LittleEndian::read_u32(hearder);
+                    let bytes = self.next_bytes(data, byte_length as usize);
+                    let bytes_without_null = match bytes.split_last() {
+                        None => bytes,
+                        Some((null_char, contents)) => contents,
+                    };
+                    let value = std::str::from_utf8(bytes_without_null).unwrap();
+                    PrimitiveValue::String(value.to_string())
+                }
+            },
             _ => {
                 // Default to 8 bytes for now
                 let bytes = self.next_bytes(data, 8);
@@ -969,14 +989,14 @@ mod tests {
         // };
         // expected_ros_msg_values.push(twist_msg_value);
 
-        // let string_msg_value = RosMsgValue {
-        //     name: "String".to_string(),
-        //     value: vec![RosFieldValue::new(
-        //         "data".to_string(),
-        //         RosDataValue::PrimitiveValue(PrimitiveValue::String("Hello, world!".to_string())),
-        //     )],
-        // };
-        // expected_ros_msg_values.push(string_msg_value);
+        let string_msg_value = RosMsgValue {
+            name: "String".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::PrimitiveValue(PrimitiveValue::String("Hello, World!".to_string())),
+            )],
+        };
+        expected_ros_msg_values.push(string_msg_value);
 
         assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values, expected_ros_msg_values);
