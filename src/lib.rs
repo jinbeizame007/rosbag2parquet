@@ -80,8 +80,19 @@ pub enum NonArrayRosDataType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RosDataValue {
-    PrimitiveValue(PrimitiveValue),
-    ComplexValue(RosMsgValue),
+    NonArray(NonArrayRosDataValue),
+    DynamicArray(DynamicArrayRosDataValue),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DynamicArrayRosDataValue {
+    pub values: Vec<NonArrayRosDataValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NonArrayRosDataValue {
+    Primitive(PrimitiveValue),
+    Complex(RosMsgValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -468,27 +479,66 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_field(&mut self, field: &'a RosField<'a>, data: &[u8]) -> RosFieldValue {
         let value = match &field.data_type {
-            RosDataType::DynamicArray(non_array_data_type) => match non_array_data_type {
-                NonArrayRosDataType::Primitive(prim) => {
-                    RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
-                }
-                NonArrayRosDataType::Complex(name) => {
-                    RosDataValue::ComplexValue(self.parse_complex(name, data))
-                }
-            },
+            RosDataType::DynamicArray(non_array_data_type) => {
+                RosDataValue::DynamicArray(self.parse_dynamic_array(non_array_data_type, data))
+            }
             RosDataType::NonArray(non_array_data_type) => match non_array_data_type {
-                NonArrayRosDataType::Primitive(prim) => {
-                    RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
-                }
-                NonArrayRosDataType::Complex(name) => {
-                    RosDataValue::ComplexValue(self.parse_complex(name, data))
-                }
+                NonArrayRosDataType::Primitive(prim) => RosDataValue::NonArray(
+                    NonArrayRosDataValue::Primitive(self.parse_primitive(prim, data)),
+                ),
+                NonArrayRosDataType::Complex(name) => RosDataValue::NonArray(
+                    NonArrayRosDataValue::Complex(self.parse_complex(name, data)),
+                ),
             },
         };
 
         RosFieldValue {
             name: field.name.to_string(),
             value,
+        }
+    }
+
+    fn parse_dynamic_array(
+        &mut self,
+        non_array_data_type: &NonArrayRosDataType,
+        data: &[u8],
+    ) -> DynamicArrayRosDataValue {
+        match self.endianess {
+            Endianess::BigEndian => {
+                let header = self.next_bytes(data, 4);
+                let length = BigEndian::read_u32(header);
+                let mut values = Vec::new();
+                for _ in 0..length {
+                    let value = self.parse_non_array_data_value(non_array_data_type, data);
+                    values.push(value);
+                }
+                DynamicArrayRosDataValue { values }
+            }
+            Endianess::LittleEndian => {
+                let header = self.next_bytes(data, 4);
+                let length = LittleEndian::read_u32(header);
+                let mut values = Vec::new();
+                for _ in 0..length {
+                    let value = self.parse_non_array_data_value(non_array_data_type, data);
+                    values.push(value);
+                }
+                DynamicArrayRosDataValue { values }
+            }
+        }
+    }
+
+    fn parse_non_array_data_value(
+        &mut self,
+        non_array_data_type: &NonArrayRosDataType,
+        data: &[u8],
+    ) -> NonArrayRosDataValue {
+        match non_array_data_type {
+            NonArrayRosDataType::Primitive(prim) => {
+                NonArrayRosDataValue::Primitive(self.parse_primitive(prim, data))
+            }
+            NonArrayRosDataType::Complex(name) => {
+                NonArrayRosDataValue::Complex(self.parse_complex(name, data))
+            }
         }
     }
 
@@ -1038,15 +1088,21 @@ mod tests {
                 value: vec![
                     RosFieldValue::new(
                         "x".to_string(),
-                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.0))
+                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                            PrimitiveValue::Float64(1.0)
+                        ))
                     ),
                     RosFieldValue::new(
                         "y".to_string(),
-                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(2.0))
+                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                            PrimitiveValue::Float64(2.0)
+                        ))
                     ),
                     RosFieldValue::new(
                         "z".to_string(),
-                        RosDataValue::PrimitiveValue(PrimitiveValue::Float64(3.0))
+                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                            PrimitiveValue::Float64(3.0)
+                        ))
                     ),
                 ]
             }
@@ -1065,15 +1121,21 @@ mod tests {
             value: vec![
                 RosFieldValue::new(
                     "x".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.2)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(1.2),
+                    )),
                 ),
                 RosFieldValue::new(
                     "y".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
                 ),
                 RosFieldValue::new(
                     "z".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
                 ),
             ],
         };
@@ -1082,15 +1144,21 @@ mod tests {
             value: vec![
                 RosFieldValue::new(
                     "x".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
                 ),
                 RosFieldValue::new(
                     "y".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(0.0)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
                 ),
                 RosFieldValue::new(
                     "z".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(-0.6)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(-0.6),
+                    )),
                 ),
             ],
         };
@@ -1099,11 +1167,11 @@ mod tests {
             value: vec![
                 RosFieldValue::new(
                     "linear".to_string(),
-                    RosDataValue::ComplexValue(linear_msg_value),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(linear_msg_value)),
                 ),
                 RosFieldValue::new(
                     "angular".to_string(),
-                    RosDataValue::ComplexValue(angular_msg_value),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(angular_msg_value)),
                 ),
             ],
         };
@@ -1114,15 +1182,21 @@ mod tests {
             value: vec![
                 RosFieldValue::new(
                     "x".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(1.1)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(1.1),
+                    )),
                 ),
                 RosFieldValue::new(
                     "y".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(2.2)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(2.2),
+                    )),
                 ),
                 RosFieldValue::new(
                     "z".to_string(),
-                    RosDataValue::PrimitiveValue(PrimitiveValue::Float64(3.3)),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(3.3),
+                    )),
                 ),
             ],
         };
@@ -1132,7 +1206,9 @@ mod tests {
             name: "String".to_string(),
             value: vec![RosFieldValue::new(
                 "data".to_string(),
-                RosDataValue::PrimitiveValue(PrimitiveValue::String("Hello, World!".to_string())),
+                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                    "Hello, World!".to_string(),
+                ))),
             )],
         };
         expected_ros_msg_values.push(string_msg_value);
