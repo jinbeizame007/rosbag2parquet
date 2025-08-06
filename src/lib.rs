@@ -455,6 +455,14 @@ impl<'a> CdrDeserializer<'a> {
         }
     }
 
+    fn align_and_read_bytes<'b>(&mut self, data: &'b [u8], count: usize) -> &'b [u8] {
+        if self.position % count != 0 {
+            self.position += count - (self.position % count);
+        }
+
+        self.next_bytes(data, count)
+    }
+
     fn next_bytes<'b>(&mut self, data: &'b [u8], count: usize) -> &'b [u8] {
         self.position += count;
         &data[self.position - count..self.position]
@@ -1159,7 +1167,7 @@ mod tests {
 
     #[test]
     fn test_rosbag2ros_msg_values() {
-        let test_path = "rosbags/simple_rosbag/simple_rosbag_0.mcap";
+        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let ros_msg_values = rosbag2ros_msg_values(test_path).unwrap();
 
         let mut expected_ros_msg_values = Vec::new();
@@ -1260,6 +1268,373 @@ mod tests {
             )],
         };
         expected_ros_msg_values.push(string_msg_value);
+
+        assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
+        assert_eq!(ros_msg_values, expected_ros_msg_values);
+    }
+
+    #[test]
+    fn test_rosbag2ros_msg_values_array() {
+        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
+        let ros_msg_values = rosbag2ros_msg_values(test_path).unwrap();
+
+        let mut expected_ros_msg_values = Vec::new();
+
+        let imu_time_msg_value = RosMsgValue {
+            name: "Time".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "sec".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "nanosec".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+            ],
+        };
+
+        let imu_header_msg_value = RosMsgValue {
+            name: "std_msgs/Header".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "stamp".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(imu_time_msg_value)),
+                ),
+                RosFieldValue::new(
+                    "frame_id".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::String("imu_link".to_string()),
+                    )),
+                ),
+            ],
+        };
+
+        let imu_orientation_msg_value = RosMsgValue {
+            name: "geometry_msgs/Quaternion".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "w".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(1.0),
+                    )),
+                ),
+            ],
+        };
+
+        let imu_orientation_covariance_msg_value = RosMsgValue {
+            name: "float64[9]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.4)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.5)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.6)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.7)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.9)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                    ],
+                }),
+            )],
+        };
+
+        let imu_angular_velocity_msg_value = RosMsgValue {
+            name: "geometry_msgs/Vector3".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.1),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.2),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.3),
+                    )),
+                ),
+            ],
+        };
+
+        let imu_angular_velocity_covariance_msg_value = RosMsgValue {
+            name: "float64[9]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.9)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.7)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.6)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.5)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.4)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                    ],
+                }),
+            )],
+        };
+
+        let imu_linear_acceleration_msg_value = RosMsgValue {
+            name: "geometry_msgs/Vector3".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "x".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(1.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "y".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(2.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "z".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(3.0),
+                    )),
+                ),
+            ],
+        };
+
+        let imu_linear_acceleration_covariance_msg_value = RosMsgValue {
+            name: "float64[9]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                    ],
+                }),
+            )],
+        };
+
+        let imu_msg_value = RosMsgValue {
+            name: "sensor_msgs/Imu".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "header".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(imu_header_msg_value)),
+                ),
+                RosFieldValue::new(
+                    "orientation".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_orientation_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "orientation_covariance".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_orientation_covariance_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "angular_velocity".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_angular_velocity_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "angular_velocity_covariance".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_angular_velocity_covariance_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "linear_acceleration".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_linear_acceleration_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "linear_acceleration_covariance".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        imu_linear_acceleration_covariance_msg_value,
+                    )),
+                ),
+            ],
+        };
+        expected_ros_msg_values.push(imu_msg_value);
+
+        let joint_state_time_msg_value = RosMsgValue {
+            name: "Time".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "sec".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+                RosFieldValue::new(
+                    "nanosec".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::Float64(0.0),
+                    )),
+                ),
+            ],
+        };
+
+        let joint_state_header_msg_value = RosMsgValue {
+            name: "std_msgs/Header".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "stamp".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_time_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "frame_id".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        PrimitiveValue::String("".to_string()),
+                    )),
+                ),
+            ],
+        };
+
+        let joint_state_name_msg_value = RosMsgValue {
+            name: "string[]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            "joint1".to_string(),
+                        )),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            "joint2".to_string(),
+                        )),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            "joint3".to_string(),
+                        )),
+                    ],
+                }),
+            )],
+        };
+
+        let joint_state_position_msg_value = RosMsgValue {
+            name: "float64[]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(1.5)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(-0.5)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
+                    ],
+                }),
+            )],
+        };
+
+        let joint_state_velocity_msg_value = RosMsgValue {
+            name: "float64[]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
+                    ],
+                }),
+            )],
+        };
+
+        let joint_state_effort_msg_value = RosMsgValue {
+            name: "float64[]".to_string(),
+            value: vec![RosFieldValue::new(
+                "data".to_string(),
+                RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    values: vec![
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.1)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.2)),
+                        NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.3)),
+                    ],
+                }),
+            )],
+        };
+
+        let joint_state_msg_value = RosMsgValue {
+            name: "sensor_msgs/JointState".to_string(),
+            value: vec![
+                RosFieldValue::new(
+                    "header".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_header_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "name".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_name_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "position".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_position_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "velocity".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_velocity_msg_value,
+                    )),
+                ),
+                RosFieldValue::new(
+                    "effort".to_string(),
+                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
+                        joint_state_effort_msg_value,
+                    )),
+                ),
+            ],
+        };
+        expected_ros_msg_values.push(joint_state_msg_value);
 
         assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values, expected_ros_msg_values);
