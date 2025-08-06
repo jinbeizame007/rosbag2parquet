@@ -69,6 +69,10 @@ impl RosFieldValue {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RosDataType {
     NonArray(NonArrayRosDataType),
+    StaticArray {
+        data_type: NonArrayRosDataType,
+        length: u32,
+    },
     DynamicArray(NonArrayRosDataType),
 }
 
@@ -81,11 +85,17 @@ pub enum NonArrayRosDataType {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RosDataValue {
     NonArray(NonArrayRosDataValue),
+    StaticArray(StaticArrayRosDataValue),
     DynamicArray(DynamicArrayRosDataValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DynamicArrayRosDataValue {
+    pub values: Vec<NonArrayRosDataValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticArrayRosDataValue {
     pub values: Vec<NonArrayRosDataValue>,
 }
 
@@ -482,6 +492,9 @@ impl<'a> CdrDeserializer<'a> {
             RosDataType::DynamicArray(non_array_data_type) => {
                 RosDataValue::DynamicArray(self.parse_dynamic_array(non_array_data_type, data))
             }
+            RosDataType::StaticArray { data_type, length } => {
+                RosDataValue::StaticArray(self.parse_static_array(data_type, length, data))
+            }
             RosDataType::NonArray(non_array_data_type) => match non_array_data_type {
                 NonArrayRosDataType::Primitive(prim) => RosDataValue::NonArray(
                     NonArrayRosDataValue::Primitive(self.parse_primitive(prim, data)),
@@ -495,6 +508,32 @@ impl<'a> CdrDeserializer<'a> {
         RosFieldValue {
             name: field.name.to_string(),
             value,
+        }
+    }
+
+    fn parse_static_array(
+        &mut self,
+        non_array_data_type: &NonArrayRosDataType,
+        length: &u32,
+        data: &[u8],
+    ) -> StaticArrayRosDataValue {
+        match self.endianess {
+            Endianess::BigEndian => {
+                let mut values = Vec::new();
+                for _ in 0..*length {
+                    let value = self.parse_non_array_data_value(non_array_data_type, data);
+                    values.push(value);
+                }
+                StaticArrayRosDataValue { values }
+            }
+            Endianess::LittleEndian => {
+                let mut values = Vec::new();
+                for _ in 0..*length {
+                    let value = self.parse_non_array_data_value(non_array_data_type, data);
+                    values.push(value);
+                }
+                StaticArrayRosDataValue { values }
+            }
         }
     }
 
@@ -631,6 +670,17 @@ fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
     if input.ends_with("[]") {
         let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
         return Ok((rest, RosDataType::DynamicArray(data_type)));
+    }
+
+    if input.ends_with("]") {
+        let data_type_and_length = input
+            .split_at(input.len() - 1)
+            .0
+            .split('[')
+            .collect::<Vec<&str>>();
+        let (rest, data_type) = non_array_ros_data_type(data_type_and_length[0])?;
+        let length = data_type_and_length[1].parse::<u32>().unwrap();
+        return Ok((rest, RosDataType::StaticArray { data_type, length }));
     }
 
     let (rest, data_type) = non_array_ros_data_type(input)?;
@@ -964,8 +1014,6 @@ mod tests {
             msg_definition_table.get("TwistStamped"),
             expected_msg_definition_table.get("TwistStamped")
         );
-
-        println!("{:?}", msg_definition_table);
     }
 
     #[test]
