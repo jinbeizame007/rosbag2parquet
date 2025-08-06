@@ -68,6 +68,12 @@ impl RosFieldValue {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum RosDataType {
+    NonArray(NonArrayRosDataType),
+    DynamicArray(NonArrayRosDataType),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum NonArrayRosDataType {
     Primitive(Primitive),
     Complex(String),
 }
@@ -253,9 +259,9 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
             let schema_data = schema.data.clone();
 
             let schema_text = std::str::from_utf8(&schema_data)?;
-            println!("Schema: {} ({})", schema_name, schema_text);
-            println!();
-            println!();
+            // println!("Schema: {} ({})", schema_name, schema_text);
+            // println!();
+            // println!();
         }
     }
 
@@ -462,12 +468,22 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_field(&mut self, field: &'a RosField<'a>, data: &[u8]) -> RosFieldValue {
         let value = match &field.data_type {
-            RosDataType::Primitive(prim) => {
-                RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
-            }
-            RosDataType::Complex(name) => {
-                RosDataValue::ComplexValue(self.parse_complex(name, data))
-            }
+            RosDataType::DynamicArray(non_array_data_type) => match non_array_data_type {
+                NonArrayRosDataType::Primitive(prim) => {
+                    RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
+                }
+                NonArrayRosDataType::Complex(name) => {
+                    RosDataValue::ComplexValue(self.parse_complex(name, data))
+                }
+            },
+            RosDataType::NonArray(non_array_data_type) => match non_array_data_type {
+                NonArrayRosDataType::Primitive(prim) => {
+                    RosDataValue::PrimitiveValue(self.parse_primitive(prim, data))
+                }
+                NonArrayRosDataType::Complex(name) => {
+                    RosDataValue::ComplexValue(self.parse_complex(name, data))
+                }
+            },
         };
 
         RosFieldValue {
@@ -562,15 +578,24 @@ impl<'a> CdrDeserializer<'a> {
 }
 
 fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
-    // First try to parse as a primitive type
+    if input.ends_with("[]") {
+        let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
+        return Ok((rest, RosDataType::DynamicArray(data_type)));
+    }
+
+    let (rest, data_type) = non_array_ros_data_type(input)?;
+    Ok((rest, RosDataType::NonArray(data_type)))
+}
+
+fn non_array_ros_data_type(input: &str) -> IResult<&str, NonArrayRosDataType> {
     if let Ok((rest, prim)) = primitive_type(input) {
-        return Ok((rest, RosDataType::Primitive(prim)));
+        return Ok((rest, NonArrayRosDataType::Primitive(prim)));
     }
 
     // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
         recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
-        |full_type: &str| RosDataType::Complex(full_type.to_string()),
+        |full_type: &str| NonArrayRosDataType::Complex(full_type.to_string()),
     );
     parser.parse(input)
 }
@@ -637,14 +662,19 @@ mod tests {
         let input = "float64";
         let (rest, data_type) = ros_data_type(input).unwrap();
         assert_eq!(rest, "");
-        assert_eq!(data_type, RosDataType::Primitive(Primitive::Float64));
+        assert_eq!(
+            data_type,
+            RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64))
+        );
 
         let input = "sensor_msgs/msg/Temperature";
         let (rest, data_type) = ros_data_type(input).unwrap();
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
-            RosDataType::Complex("sensor_msgs/msg/Temperature".to_string())
+            RosDataType::NonArray(NonArrayRosDataType::Complex(
+                "sensor_msgs/msg/Temperature".to_string(),
+            ))
         );
     }
 
@@ -744,9 +774,18 @@ mod tests {
             Some(&RosMsgDefinition::new(
                 schema_name,
                 vec![
-                    RosField::new(RosDataType::Primitive(Primitive::Float64), "x",),
-                    RosField::new(RosDataType::Primitive(Primitive::Float64), "y",),
-                    RosField::new(RosDataType::Primitive(Primitive::Float64), "z",),
+                    RosField::new(
+                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                        "x",
+                    ),
+                    RosField::new(
+                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                        "y",
+                    ),
+                    RosField::new(
+                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                        "z",
+                    ),
                 ],
             ))
         );
@@ -765,8 +804,14 @@ mod tests {
         let time_msg_definition = RosMsgDefinition::new(
             "builtin_interfaces/Time",
             vec![
-                RosField::new(RosDataType::Primitive(Primitive::Int32), "sec"),
-                RosField::new(RosDataType::Primitive(Primitive::UInt32), "nanosec"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Int32)),
+                    "sec",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::UInt32)),
+                    "nanosec",
+                ),
             ],
         );
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
@@ -774,8 +819,14 @@ mod tests {
         let header_msg_definition = RosMsgDefinition::new(
             "std_msgs/Header",
             vec![
-                RosField::new(RosDataType::Complex("Time".to_string()), "stamp"),
-                RosField::new(RosDataType::Primitive(Primitive::String), "frame_id"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Time".to_string())),
+                    "stamp",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                    "frame_id",
+                ),
             ],
         );
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
@@ -783,9 +834,18 @@ mod tests {
         let vector3d_msg_definition = RosMsgDefinition::new(
             "geometry_msgs/Vector3",
             vec![
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "x"),
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "y"),
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "z"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "x",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "y",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "z",
+                ),
             ],
         );
         expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
@@ -793,8 +853,14 @@ mod tests {
         let twist_msg_definition = RosMsgDefinition::new(
             "geometry_msgs/Twist",
             vec![
-                RosField::new(RosDataType::Complex("Vector3".to_string()), "linear"),
-                RosField::new(RosDataType::Complex("Vector3".to_string()), "angular"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Vector3".to_string())),
+                    "linear",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Vector3".to_string())),
+                    "angular",
+                ),
             ],
         );
         expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
@@ -802,8 +868,14 @@ mod tests {
         let twist_stamped_msg_definition = RosMsgDefinition::new(
             "geometry_msgs/msg/TwistStamped",
             vec![
-                RosField::new(RosDataType::Complex("Header".to_string()), "header"),
-                RosField::new(RosDataType::Complex("Twist".to_string()), "twist"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Header".to_string())),
+                    "header",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Twist".to_string())),
+                    "twist",
+                ),
             ],
         );
         expected_msg_definition_table.insert("TwistStamped", twist_stamped_msg_definition.clone());
@@ -847,13 +919,96 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_msg_definition_from_schema_section_joint_state() {
+        let schema_name = "sensor_msgs/msg/JointState";
+        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        let mut msg_definition_table = HashMap::new();
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+
+        let mut expected_msg_definition_table = HashMap::new();
+
+        let time_msg_definition = RosMsgDefinition::new(
+            "builtin_interfaces/Time",
+            vec![
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Int32)),
+                    "sec",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::UInt32)),
+                    "nanosec",
+                ),
+            ],
+        );
+        expected_msg_definition_table.insert("Time", time_msg_definition.clone());
+
+        let header_msg_definition = RosMsgDefinition::new(
+            "std_msgs/Header",
+            vec![
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Time".to_string())),
+                    "stamp",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                    "frame_id",
+                ),
+            ],
+        );
+        expected_msg_definition_table.insert("Header", header_msg_definition.clone());
+
+        let joint_state_msg_definition = RosMsgDefinition::new(
+            "sensor_msgs/msg/JointState",
+            vec![
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Complex("Header".to_string())),
+                    "header",
+                ),
+                RosField::new(
+                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                    "name",
+                ),
+                RosField::new(
+                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "position",
+                ),
+                RosField::new(
+                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "velocity",
+                ),
+                RosField::new(
+                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "effort",
+                ),
+            ],
+        );
+        expected_msg_definition_table.insert("JointState", joint_state_msg_definition.clone());
+
+        assert_eq!(
+            msg_definition_table.len(),
+            expected_msg_definition_table.len()
+        );
+        assert_eq!(msg_definition_table, expected_msg_definition_table);
+    }
+
+    #[test]
     fn test_cdr_deserializer_vector3d() {
         let vector3d_msg_definition = RosMsgDefinition::new(
             "geometry_msgs/Vector3",
             vec![
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "x"),
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "y"),
-                RosField::new(RosDataType::Primitive(Primitive::Float64), "z"),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "x",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "y",
+                ),
+                RosField::new(
+                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    "z",
+                ),
             ],
         );
         let vector3d_msg_definition_table = HashMap::from([("Vector3", vector3d_msg_definition)]);
