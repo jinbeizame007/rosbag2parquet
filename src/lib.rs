@@ -32,12 +32,6 @@ impl<'a> MessageDefinition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Message {
-    pub name: String,
-    pub value: Vec<Field>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub struct FieldDefinition<'a> {
     pub data_type: FieldType,
     pub name: &'a str,
@@ -53,54 +47,16 @@ impl<'a> FieldDefinition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Field {
-    pub name: String,
-    pub value: FieldValue,
-}
-
-impl Field {
-    pub fn new(name: String, value: FieldValue) -> Field {
-        Field { name, value }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
 pub enum FieldType {
-    NonArray(NonArrayFieldType),
-    Array {
-        data_type: NonArrayFieldType,
-        length: u32,
-    },
-    Sequence(NonArrayFieldType),
+    Base(BaseType),
+    Array { data_type: BaseType, length: u32 },
+    Sequence(BaseType),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NonArrayFieldType {
+pub enum BaseType {
     Primitive(Primitive),
     Complex(String),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum FieldValue {
-    NonArray(NonArrayFieldValue),
-    Array(ArrayFieldValue),
-    Sequence(SequenceFieldValue),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct SequenceFieldValue {
-    pub values: Vec<NonArrayFieldValue>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ArrayFieldValue {
-    pub values: Vec<NonArrayFieldValue>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum NonArrayFieldValue {
-    Primitive(PrimitiveValue),
-    Complex(Message),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,6 +75,47 @@ pub enum Primitive {
     Int64,
     UInt64,
     String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Message {
+    pub name: String,
+    pub value: Vec<Field>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Field {
+    pub name: String,
+    pub value: FieldValue,
+}
+
+impl Field {
+    pub fn new(name: String, value: FieldValue) -> Field {
+        Field { name, value }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum FieldValue {
+    Base(BaseValue),
+    Array(ArrayFieldValue),
+    Sequence(SequenceFieldValue),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SequenceFieldValue {
+    pub values: Vec<BaseValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArrayFieldValue {
+    pub values: Vec<BaseValue>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BaseValue {
+    Primitive(PrimitiveValue),
+    Complex(Message),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -379,13 +376,13 @@ impl<'a> CdrDeserializer<'a> {
             FieldType::Array { data_type, length } => {
                 FieldValue::Array(self.parse_static_array(data_type, length, data))
             }
-            FieldType::NonArray(non_array_data_type) => match non_array_data_type {
-                NonArrayFieldType::Primitive(prim) => FieldValue::NonArray(
-                    NonArrayFieldValue::Primitive(self.parse_primitive(prim, data)),
-                ),
-                NonArrayFieldType::Complex(name) => FieldValue::NonArray(
-                    NonArrayFieldValue::Complex(self.parse_complex(name, data)),
-                ),
+            FieldType::Base(non_array_data_type) => match non_array_data_type {
+                BaseType::Primitive(prim) => {
+                    FieldValue::Base(BaseValue::Primitive(self.parse_primitive(prim, data)))
+                }
+                BaseType::Complex(name) => {
+                    FieldValue::Base(BaseValue::Complex(self.parse_complex(name, data)))
+                }
             },
         };
 
@@ -397,7 +394,7 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_static_array(
         &mut self,
-        non_array_data_type: &NonArrayFieldType,
+        non_array_data_type: &BaseType,
         length: &u32,
         data: &[u8],
     ) -> ArrayFieldValue {
@@ -411,7 +408,7 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_dynamic_array(
         &mut self,
-        non_array_data_type: &NonArrayFieldType,
+        non_array_data_type: &BaseType,
         data: &[u8],
     ) -> SequenceFieldValue {
         self.align_to(4);
@@ -430,16 +427,12 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_non_array_data_value(
         &mut self,
-        non_array_data_type: &NonArrayFieldType,
+        non_array_data_type: &BaseType,
         data: &[u8],
-    ) -> NonArrayFieldValue {
+    ) -> BaseValue {
         match non_array_data_type {
-            NonArrayFieldType::Primitive(prim) => {
-                NonArrayFieldValue::Primitive(self.parse_primitive(prim, data))
-            }
-            NonArrayFieldType::Complex(name) => {
-                NonArrayFieldValue::Complex(self.parse_complex(name, data))
-            }
+            BaseType::Primitive(prim) => BaseValue::Primitive(self.parse_primitive(prim, data)),
+            BaseType::Complex(name) => BaseValue::Complex(self.parse_complex(name, data)),
         }
     }
 
@@ -596,18 +589,18 @@ fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
     }
 
     let (rest, data_type) = non_array_ros_data_type(input)?;
-    Ok((rest, FieldType::NonArray(data_type)))
+    Ok((rest, FieldType::Base(data_type)))
 }
 
-fn non_array_ros_data_type(input: &str) -> IResult<&str, NonArrayFieldType> {
+fn non_array_ros_data_type(input: &str) -> IResult<&str, BaseType> {
     if let Ok((rest, prim)) = primitive_type(input) {
-        return Ok((rest, NonArrayFieldType::Primitive(prim)));
+        return Ok((rest, BaseType::Primitive(prim)));
     }
 
     // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
         recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
-        |full_type: &str| NonArrayFieldType::Complex(full_type.to_string()),
+        |full_type: &str| BaseType::Complex(full_type.to_string()),
     );
     parser.parse(input)
 }
@@ -650,7 +643,7 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
-            FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64))
+            FieldType::Base(BaseType::Primitive(Primitive::Float64))
         );
 
         let input = "sensor_msgs/msg/Temperature";
@@ -658,9 +651,7 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
-            FieldType::NonArray(NonArrayFieldType::Complex(
-                "sensor_msgs/msg/Temperature".to_string(),
-            ))
+            FieldType::Base(BaseType::Complex("sensor_msgs/msg/Temperature".to_string(),))
         );
     }
 
@@ -761,15 +752,15 @@ mod tests {
                 schema_name,
                 vec![
                     FieldDefinition::new(
-                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                         "x",
                     ),
                     FieldDefinition::new(
-                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                         "y",
                     ),
                     FieldDefinition::new(
-                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                         "z",
                     ),
                 ],
@@ -791,11 +782,11 @@ mod tests {
             "builtin_interfaces/Time",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Int32)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
                     "sec",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::UInt32)),
+                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
                     "nanosec",
                 ),
             ],
@@ -806,11 +797,11 @@ mod tests {
             "std_msgs/Header",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Time".to_string())),
+                    FieldType::Base(BaseType::Complex("Time".to_string())),
                     "stamp",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::String)),
+                    FieldType::Base(BaseType::Primitive(Primitive::String)),
                     "frame_id",
                 ),
             ],
@@ -821,15 +812,15 @@ mod tests {
             "geometry_msgs/Vector3",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "x",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "y",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "z",
                 ),
             ],
@@ -840,11 +831,11 @@ mod tests {
             "geometry_msgs/Twist",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Vector3".to_string())),
+                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
                     "linear",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Vector3".to_string())),
+                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
                     "angular",
                 ),
             ],
@@ -855,11 +846,11 @@ mod tests {
             "geometry_msgs/msg/TwistStamped",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Header".to_string())),
+                    FieldType::Base(BaseType::Complex("Header".to_string())),
                     "header",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Twist".to_string())),
+                    FieldType::Base(BaseType::Complex("Twist".to_string())),
                     "twist",
                 ),
             ],
@@ -916,11 +907,11 @@ mod tests {
             "builtin_interfaces/Time",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Int32)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
                     "sec",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::UInt32)),
+                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
                     "nanosec",
                 ),
             ],
@@ -931,11 +922,11 @@ mod tests {
             "std_msgs/Header",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Time".to_string())),
+                    FieldType::Base(BaseType::Complex("Time".to_string())),
                     "stamp",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::String)),
+                    FieldType::Base(BaseType::Primitive(Primitive::String)),
                     "frame_id",
                 ),
             ],
@@ -946,23 +937,23 @@ mod tests {
             "sensor_msgs/msg/JointState",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Complex("Header".to_string())),
+                    FieldType::Base(BaseType::Complex("Header".to_string())),
                     "header",
                 ),
                 FieldDefinition::new(
-                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::String)),
+                    FieldType::Sequence(BaseType::Primitive(Primitive::String)),
                     "name",
                 ),
                 FieldDefinition::new(
-                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
                     "position",
                 ),
                 FieldDefinition::new(
-                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
                     "velocity",
                 ),
                 FieldDefinition::new(
-                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
                     "effort",
                 ),
             ],
@@ -982,15 +973,15 @@ mod tests {
             "geometry_msgs/Vector3",
             vec![
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "x",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "y",
                 ),
                 FieldDefinition::new(
-                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
                     "z",
                 ),
             ],
@@ -1022,21 +1013,15 @@ mod tests {
                 value: vec![
                     Field::new(
                         "x".to_string(),
-                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                            PrimitiveValue::Float64(1.0)
-                        ))
+                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.0)))
                     ),
                     Field::new(
                         "y".to_string(),
-                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                            PrimitiveValue::Float64(2.0)
-                        ))
+                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(2.0)))
                     ),
                     Field::new(
                         "z".to_string(),
-                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                            PrimitiveValue::Float64(3.0)
-                        ))
+                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(3.0)))
                     ),
                 ]
             }
@@ -1055,21 +1040,15 @@ mod tests {
             value: vec![
                 Field::new(
                     "x".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        1.2,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.2))),
                 ),
                 Field::new(
                     "y".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "z".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
             ],
         };
@@ -1078,21 +1057,15 @@ mod tests {
             value: vec![
                 Field::new(
                     "x".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "y".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "z".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        -0.6,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(-0.6))),
                 ),
             ],
         };
@@ -1101,11 +1074,11 @@ mod tests {
             value: vec![
                 Field::new(
                     "linear".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(linear_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(linear_msg_value)),
                 ),
                 Field::new(
                     "angular".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(angular_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(angular_msg_value)),
                 ),
             ],
         };
@@ -1116,21 +1089,15 @@ mod tests {
             value: vec![
                 Field::new(
                     "x".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        1.1,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.1))),
                 ),
                 Field::new(
                     "y".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        2.2,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(2.2))),
                 ),
                 Field::new(
                     "z".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        3.3,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(3.3))),
                 ),
             ],
         };
@@ -1140,7 +1107,7 @@ mod tests {
             name: "String".to_string(),
             value: vec![Field::new(
                 "data".to_string(),
-                FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
+                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
                     "Hello, World!".to_string(),
                 ))),
             )],
@@ -1163,11 +1130,11 @@ mod tests {
             value: vec![
                 Field::new(
                     "sec".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Int32(0))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(0))),
                 ),
                 Field::new(
                     "nanosec".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::UInt32(0))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(0))),
                 ),
             ],
         };
@@ -1177,11 +1144,11 @@ mod tests {
             value: vec![
                 Field::new(
                     "stamp".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_time_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(imu_time_msg_value)),
                 ),
                 Field::new(
                     "frame_id".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
                         "imu_link".to_string(),
                     ))),
                 ),
@@ -1193,27 +1160,19 @@ mod tests {
             value: vec![
                 Field::new(
                     "x".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "y".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "z".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        0.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
                 ),
                 Field::new(
                     "w".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
-                        1.0,
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.0))),
                 ),
             ],
         };
@@ -1223,50 +1182,50 @@ mod tests {
             value: vec![
                 Field::new(
                     "header".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_header_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(imu_header_msg_value)),
                 ),
                 Field::new(
                     "orientation".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_orientation_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(imu_orientation_msg_value)),
                 ),
                 Field::new(
                     "orientation_covariance".to_string(),
                     FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.9)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
                         ],
                     }),
                 ),
                 Field::new(
                     "angular_velocity".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(Message {
+                    FieldValue::Base(BaseValue::Complex(Message {
                         name: "Vector3".to_string(),
                         value: vec![
                             Field::new(
                                 "x".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(0.1),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    0.1,
+                                ))),
                             ),
                             Field::new(
                                 "y".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(0.2),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    0.2,
+                                ))),
                             ),
                             Field::new(
                                 "z".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(0.3),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    0.3,
+                                ))),
                             ),
                         ],
                     })),
@@ -1275,40 +1234,40 @@ mod tests {
                     "angular_velocity_covariance".to_string(),
                     FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.9)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
                         ],
                     }),
                 ),
                 Field::new(
                     "linear_acceleration".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(Message {
+                    FieldValue::Base(BaseValue::Complex(Message {
                         name: "Vector3".to_string(),
                         value: vec![
                             Field::new(
                                 "x".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(1.0),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    1.0,
+                                ))),
                             ),
                             Field::new(
                                 "y".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(2.0),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    2.0,
+                                ))),
                             ),
                             Field::new(
                                 "z".to_string(),
-                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
-                                    PrimitiveValue::Float64(3.0),
-                                )),
+                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
+                                    3.0,
+                                ))),
                             ),
                         ],
                     })),
@@ -1317,15 +1276,15 @@ mod tests {
                     "linear_acceleration_covariance".to_string(),
                     FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
                         ],
                     }),
                 ),
@@ -1338,11 +1297,11 @@ mod tests {
             value: vec![
                 Field::new(
                     "sec".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Int32(0))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(0))),
                 ),
                 Field::new(
                     "nanosec".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::UInt32(0))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(0))),
                 ),
             ],
         };
@@ -1352,13 +1311,11 @@ mod tests {
             value: vec![
                 Field::new(
                     "stamp".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(joint_state_time_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(joint_state_time_msg_value)),
                 ),
                 Field::new(
                     "frame_id".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
-                        "".to_string(),
-                    ))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String("".to_string()))),
                 ),
             ],
         };
@@ -1368,21 +1325,15 @@ mod tests {
             value: vec![
                 Field::new(
                     "header".to_string(),
-                    FieldValue::NonArray(NonArrayFieldValue::Complex(joint_state_header_msg_value)),
+                    FieldValue::Base(BaseValue::Complex(joint_state_header_msg_value)),
                 ),
                 Field::new(
                     "name".to_string(),
                     FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
-                                "joint1".to_string(),
-                            )),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
-                                "joint2".to_string(),
-                            )),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
-                                "joint3".to_string(),
-                            )),
+                            BaseValue::Primitive(PrimitiveValue::String("joint1".to_string())),
+                            BaseValue::Primitive(PrimitiveValue::String("joint2".to_string())),
+                            BaseValue::Primitive(PrimitiveValue::String("joint3".to_string())),
                         ],
                     }),
                 ),
@@ -1390,9 +1341,9 @@ mod tests {
                     "position".to_string(),
                     FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(1.5)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(-0.5)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(1.5)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(-0.5)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
                         ],
                     }),
                 ),
@@ -1400,9 +1351,9 @@ mod tests {
                     "velocity".to_string(),
                     FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
                         ],
                     }),
                 ),
@@ -1410,9 +1361,9 @@ mod tests {
                     "effort".to_string(),
                     FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.1)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.2)),
-                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.3)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(10.1)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(10.2)),
+                            BaseValue::Primitive(PrimitiveValue::Float64(10.3)),
                         ],
                     }),
                 ),
