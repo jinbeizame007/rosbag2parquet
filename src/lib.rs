@@ -456,8 +456,9 @@ impl<'a> CdrDeserializer<'a> {
     }
 
     fn align_to<'b>(&mut self, count: usize) {
-        if self.position % count != 0 {
-            self.position += count - (self.position % count);
+        let modulo = (self.position - 4) % count;
+        if modulo != 0 {
+            self.position += count - modulo;
         }
     }
 
@@ -602,10 +603,12 @@ impl<'a> CdrDeserializer<'a> {
                 todo!()
             }
             Primitive::Float32 => {
+                self.align_to(4);
                 let bytes = self.next_bytes(data, 4);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::Float64 => {
+                self.align_to(8);
                 let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
@@ -614,14 +617,17 @@ impl<'a> CdrDeserializer<'a> {
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::Int16 | Primitive::UInt16 => {
+                self.align_to(2);
                 let bytes = self.next_bytes(data, 2);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::Int32 | Primitive::UInt32 => {
+                self.align_to(4);
                 let bytes = self.next_bytes(data, 4);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
             Primitive::Int64 | Primitive::UInt64 => {
+                self.align_to(8);
                 let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
