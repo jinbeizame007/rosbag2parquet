@@ -25,7 +25,7 @@ pub struct MessageDefinition<'a> {
 impl<'a> MessageDefinition<'a> {
     pub fn new(name: &'a str, fields: Vec<FieldDefinition<'a>>) -> MessageDefinition<'a> {
         MessageDefinition {
-            name: extract_message_type(name),
+            name,
             fields,
         }
     }
@@ -41,7 +41,7 @@ impl<'a> FieldDefinition<'a> {
     pub fn new(data_type: FieldType, name: &'a str) -> FieldDefinition<'a> {
         FieldDefinition {
             data_type,
-            name: extract_message_type(name),
+            name,
         }
     }
 }
@@ -290,7 +290,7 @@ fn parse_msg_definition_from_schema_section<'a>(
             fields.push(field);
         }
 
-        let msg_definition = MessageDefinition::new(schema_section.type_name, fields);
+        let msg_definition = MessageDefinition::new(short_name, fields);
         msg_definition_table.insert(short_name, msg_definition);
     }
 }
@@ -429,20 +429,12 @@ impl<'a> CdrDeserializer<'a> {
     fn parse_primitive(&mut self, prim: &Primitive, data: &[u8]) -> PrimitiveValue {
         match prim {
             Primitive::Bool => PrimitiveValue::Bool(self.deserialize_bool(data)),
-            Primitive::Byte => {
-                todo!()
-            }
-            Primitive::Char => {
-                todo!()
-            }
+            Primitive::Byte => PrimitiveValue::Byte(self.deserialize_u8(data)),
+            Primitive::Char => PrimitiveValue::Char(self.deserialize_char(data)),
             Primitive::Float32 => PrimitiveValue::Float32(self.deserialize_f32(data)),
             Primitive::Float64 => PrimitiveValue::Float64(self.deserialize_f64(data)),
-            Primitive::Int8 => {
-                todo!()
-            }
-            Primitive::UInt8 => {
-                todo!()
-            }
+            Primitive::Int8 => PrimitiveValue::Int8(self.deserialize_i8(data)),
+            Primitive::UInt8 => PrimitiveValue::UInt8(self.deserialize_u8(data)),
             Primitive::Int16 => PrimitiveValue::Int16(self.deserialize_i16(data)),
             Primitive::UInt16 => PrimitiveValue::UInt16(self.deserialize_u16(data)),
             Primitive::Int32 => PrimitiveValue::Int32(self.deserialize_i32(data)),
@@ -474,6 +466,21 @@ impl<'a> CdrDeserializer<'a> {
     fn deserialize_bool(&mut self, data: &[u8]) -> bool {
         let bytes = self.next_bytes(data, 1);
         bytes[0] == 0x01
+    }
+
+    fn deserialize_i8(&mut self, data: &[u8]) -> i8 {
+        let bytes = self.next_bytes(data, 1);
+        bytes[0] as i8
+    }
+
+    fn deserialize_u8(&mut self, data: &[u8]) -> u8 {
+        let bytes = self.next_bytes(data, 1);
+        bytes[0]
+    }
+
+    fn deserialize_char(&mut self, data: &[u8]) -> char {
+        let byte = self.next_bytes(data, 1)[0];
+        byte as char
     }
 
     fn deserialize_i16(&mut self, data: &[u8]) -> i16 {
@@ -739,7 +746,7 @@ mod tests {
         assert_eq!(
             msg_definition_table.get("Vector3"),
             Some(&MessageDefinition::new(
-                schema_name,
+                "Vector3",
                 vec![
                     FieldDefinition::new(
                         FieldType::Base(BaseType::Primitive(Primitive::Float64)),
@@ -769,7 +776,7 @@ mod tests {
         let mut expected_msg_definition_table = HashMap::new();
 
         let time_msg_definition = MessageDefinition::new(
-            "builtin_interfaces/Time",
+            "Time",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Primitive(Primitive::Int32)),
@@ -784,7 +791,7 @@ mod tests {
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
         let header_msg_definition = MessageDefinition::new(
-            "std_msgs/Header",
+            "Header",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Complex("Time".to_string())),
@@ -799,7 +806,7 @@ mod tests {
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
         let vector3d_msg_definition = MessageDefinition::new(
-            "geometry_msgs/Vector3",
+            "Vector3",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Primitive(Primitive::Float64)),
@@ -818,7 +825,7 @@ mod tests {
         expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
 
         let twist_msg_definition = MessageDefinition::new(
-            "geometry_msgs/Twist",
+            "Twist",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Complex("Vector3".to_string())),
@@ -833,7 +840,7 @@ mod tests {
         expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
 
         let twist_stamped_msg_definition = MessageDefinition::new(
-            "geometry_msgs/msg/TwistStamped",
+            "TwistStamped",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Complex("Header".to_string())),
@@ -894,7 +901,7 @@ mod tests {
         let mut expected_msg_definition_table = HashMap::new();
 
         let time_msg_definition = MessageDefinition::new(
-            "builtin_interfaces/Time",
+            "Time",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Primitive(Primitive::Int32)),
@@ -909,7 +916,7 @@ mod tests {
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
         let header_msg_definition = MessageDefinition::new(
-            "std_msgs/Header",
+            "Header",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Complex("Time".to_string())),
@@ -924,7 +931,7 @@ mod tests {
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
         let joint_state_msg_definition = MessageDefinition::new(
-            "sensor_msgs/msg/JointState",
+            "JointState",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Complex("Header".to_string())),
@@ -960,7 +967,7 @@ mod tests {
     #[test]
     fn test_cdr_deserializer_vector3d() {
         let vector3d_msg_definition = MessageDefinition::new(
-            "geometry_msgs/Vector3",
+            "Vector3",
             vec![
                 FieldDefinition::new(
                     FieldType::Base(BaseType::Primitive(Primitive::Float64)),
