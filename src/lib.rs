@@ -429,7 +429,7 @@ impl<'a> CdrDeserializer<'a> {
         }
     }
 
-    fn align_to<'b>(&mut self, count: usize) {
+    fn align_to(&mut self, count: usize) {
         let modulo = (self.position - 4) % count;
         if modulo != 0 {
             self.position += count - modulo;
@@ -497,24 +497,12 @@ impl<'a> CdrDeserializer<'a> {
         length: &u32,
         data: &[u8],
     ) -> StaticArrayRosDataValue {
-        match self.endianess {
-            Endianess::BigEndian => {
-                let mut values = Vec::new();
-                for _ in 0..*length {
-                    let value = self.parse_non_array_data_value(non_array_data_type, data);
-                    values.push(value);
-                }
-                StaticArrayRosDataValue { values }
-            }
-            Endianess::LittleEndian => {
-                let mut values = Vec::new();
-                for _ in 0..*length {
-                    let value = self.parse_non_array_data_value(non_array_data_type, data);
-                    values.push(value);
-                }
-                StaticArrayRosDataValue { values }
-            }
+        let mut values = Vec::new();
+        for _ in 0..*length {
+            let value = self.parse_non_array_data_value(non_array_data_type, data);
+            values.push(value);
         }
+        StaticArrayRosDataValue { values }
     }
 
     fn parse_dynamic_array(
@@ -522,30 +510,18 @@ impl<'a> CdrDeserializer<'a> {
         non_array_data_type: &NonArrayRosDataType,
         data: &[u8],
     ) -> DynamicArrayRosDataValue {
-        match self.endianess {
-            Endianess::BigEndian => {
-                self.align_to(4);
-                let header = self.next_bytes(data, 4);
-                let length = BigEndian::read_u32(header);
-                let mut values = Vec::new();
-                for _ in 0..length {
-                    let value = self.parse_non_array_data_value(non_array_data_type, data);
-                    values.push(value);
-                }
-                DynamicArrayRosDataValue { values }
-            }
-            Endianess::LittleEndian => {
-                self.align_to(4);
-                let header = self.next_bytes(data, 4);
-                let length = LittleEndian::read_u32(header);
-                let mut values = Vec::new();
-                for _ in 0..length {
-                    let value = self.parse_non_array_data_value(non_array_data_type, data);
-                    values.push(value);
-                }
-                DynamicArrayRosDataValue { values }
-            }
+        self.align_to(4);
+        let header = self.next_bytes(data, 4);
+        let length = match self.endianess {
+            Endianess::BigEndian => BigEndian::read_u32(header),
+            Endianess::LittleEndian => LittleEndian::read_u32(header),
+        };
+        let mut values = Vec::new();
+        for _ in 0..length {
+            let value = self.parse_non_array_data_value(non_array_data_type, data);
+            values.push(value);
         }
+        DynamicArrayRosDataValue { values }
     }
 
     fn parse_non_array_data_value(
@@ -605,32 +581,21 @@ impl<'a> CdrDeserializer<'a> {
                 let bytes = self.next_bytes(data, 8);
                 PrimitiveValue::from_bytes(bytes, prim, &endianess)
             }
-            Primitive::String => match endianess {
-                Endianess::BigEndian => {
-                    self.align_to(4);
-                    let header = self.next_bytes(data, 4);
-                    let byte_length = BigEndian::read_u32(header);
-                    let bytes = self.next_bytes(data, byte_length as usize);
-                    let bytes_without_null = match bytes.split_last() {
-                        None => bytes,
-                        Some((_null_char, contents)) => contents,
-                    };
-                    let value = std::str::from_utf8(bytes_without_null).unwrap();
-                    PrimitiveValue::String(value.to_string())
-                }
-                Endianess::LittleEndian => {
-                    self.align_to(4);
-                    let header = self.next_bytes(data, 4);
-                    let byte_length = LittleEndian::read_u32(header);
-                    let bytes = self.next_bytes(data, byte_length as usize);
-                    let bytes_without_null = match bytes.split_last() {
-                        None => bytes,
-                        Some((_null_char, contents)) => contents,
-                    };
-                    let value = std::str::from_utf8(bytes_without_null).unwrap();
-                    PrimitiveValue::String(value.to_string())
-                }
-            },
+            Primitive::String => {
+                self.align_to(4);
+                let header = self.next_bytes(data, 4);
+                let byte_length = match endianess {
+                    Endianess::BigEndian => BigEndian::read_u32(header),
+                    Endianess::LittleEndian => LittleEndian::read_u32(header),
+                };
+                let bytes = self.next_bytes(data, byte_length as usize);
+                let bytes_without_null = match bytes.split_last() {
+                    None => bytes,
+                    Some((_null_char, contents)) => contents,
+                };
+                let value = std::str::from_utf8(bytes_without_null).unwrap();
+                PrimitiveValue::String(value.to_string())
+            }
         }
     }
 
