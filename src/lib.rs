@@ -256,6 +256,7 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ros::test_helpers::*;
 
     #[test]
     fn test_ros_data_type() {
@@ -369,23 +370,7 @@ mod tests {
         assert_eq!(msg_definition_table.len(), 1);
         assert_eq!(
             msg_definition_table.get("Vector3"),
-            Some(&MessageDefinition::new(
-                "Vector3",
-                vec![
-                    FieldDefinition::new(
-                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                        "x",
-                    ),
-                    FieldDefinition::new(
-                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                        "y",
-                    ),
-                    FieldDefinition::new(
-                        FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                        "z",
-                    ),
-                ],
-            ))
+            Some(&create_vector3_definition())
         );
     }
 
@@ -399,83 +384,19 @@ mod tests {
 
         let mut expected_msg_definition_table = HashMap::new();
 
-        let time_msg_definition = MessageDefinition::new(
-            "Time",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
-                    "sec",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
-                    "nanosec",
-                ),
-            ],
-        );
+        let time_msg_definition = create_time_definition();
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
-        let header_msg_definition = MessageDefinition::new(
-            "Header",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Time".to_string())),
-                    "stamp",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::String)),
-                    "frame_id",
-                ),
-            ],
-        );
+        let header_msg_definition = create_header_definition();
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
-        let vector3d_msg_definition = MessageDefinition::new(
-            "Vector3",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "x",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "y",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "z",
-                ),
-            ],
-        );
+        let vector3d_msg_definition = create_vector3_definition();
         expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
 
-        let twist_msg_definition = MessageDefinition::new(
-            "Twist",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
-                    "linear",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
-                    "angular",
-                ),
-            ],
-        );
+        let twist_msg_definition = create_twist_definition();
         expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
 
-        let twist_stamped_msg_definition = MessageDefinition::new(
-            "TwistStamped",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Header".to_string())),
-                    "header",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Twist".to_string())),
-                    "twist",
-                ),
-            ],
-        );
+        let twist_stamped_msg_definition = create_twist_stamped_definition();
         expected_msg_definition_table.insert("TwistStamped", twist_stamped_msg_definition.clone());
 
         assert_eq!(
@@ -524,61 +445,13 @@ mod tests {
 
         let mut expected_msg_definition_table = HashMap::new();
 
-        let time_msg_definition = MessageDefinition::new(
-            "Time",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
-                    "sec",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
-                    "nanosec",
-                ),
-            ],
-        );
+        let time_msg_definition = create_time_definition();
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
-        let header_msg_definition = MessageDefinition::new(
-            "Header",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Time".to_string())),
-                    "stamp",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::String)),
-                    "frame_id",
-                ),
-            ],
-        );
+        let header_msg_definition = create_header_definition();
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
-        let joint_state_msg_definition = MessageDefinition::new(
-            "JointState",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Header".to_string())),
-                    "header",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::String)),
-                    "name",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "position",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "velocity",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "effort",
-                ),
-            ],
-        );
+        let joint_state_msg_definition = create_joint_state_definition();
         expected_msg_definition_table.insert("JointState", joint_state_msg_definition.clone());
 
         assert_eq!(
@@ -595,40 +468,8 @@ mod tests {
 
         let mut expected_ros_msg_values = Vec::new();
 
-        let linear_msg_value = Message {
-            name: "Vector3".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.2))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-            ],
-        };
-        let angular_msg_value = Message {
-            name: "Vector3".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(-0.6))),
-                ),
-            ],
-        };
+        let linear_msg_value = create_vector3_message(1.2, 0.0, 0.0);
+        let angular_msg_value = create_vector3_message(0.0, 0.0, -0.6);
         let twist_msg_value = Message {
             name: "Twist".to_string(),
             value: vec![
@@ -644,35 +485,8 @@ mod tests {
         };
         expected_ros_msg_values.push(twist_msg_value);
 
-        let vector3d_msg_value = Message {
-            name: "Vector3".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.1))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(2.2))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(3.3))),
-                ),
-            ],
-        };
-        expected_ros_msg_values.push(vector3d_msg_value);
-
-        let string_msg_value = Message {
-            name: "String".to_string(),
-            value: vec![Field::new(
-                "data".to_string(),
-                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
-                    "Hello, World!".to_string(),
-                ))),
-            )],
-        };
-        expected_ros_msg_values.push(string_msg_value);
+        expected_ros_msg_values.push(create_vector3_message(1.1, 2.2, 3.3));
+        expected_ros_msg_values.push(create_string_message("Hello, World!"));
 
         assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values, expected_ros_msg_values);
@@ -685,57 +499,9 @@ mod tests {
 
         let mut expected_ros_msg_values = Vec::new();
 
-        let imu_time_msg_value = Message {
-            name: "Time".to_string(),
-            value: vec![
-                Field::new(
-                    "sec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(0))),
-                ),
-                Field::new(
-                    "nanosec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(0))),
-                ),
-            ],
-        };
-
-        let imu_header_msg_value = Message {
-            name: "Header".to_string(),
-            value: vec![
-                Field::new(
-                    "stamp".to_string(),
-                    FieldValue::Base(BaseValue::Complex(imu_time_msg_value)),
-                ),
-                Field::new(
-                    "frame_id".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
-                        "imu_link".to_string(),
-                    ))),
-                ),
-            ],
-        };
-
-        let imu_orientation_msg_value = Message {
-            name: "Quaternion".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(0.0))),
-                ),
-                Field::new(
-                    "w".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.0))),
-                ),
-            ],
-        };
+        let imu_time_msg_value = create_time_message(0, 0);
+        let imu_header_msg_value = create_header_message(imu_time_msg_value, "imu_link");
+        let imu_orientation_msg_value = create_quaternion_message(0.0, 0.0, 0.0, 1.0);
 
         let imu_msg_value = Message {
             name: "Imu".to_string(),
@@ -750,129 +516,30 @@ mod tests {
                 ),
                 Field::new(
                     "orientation_covariance".to_string(),
-                    FieldValue::Array(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
-                    ]),
+                    create_float64_array(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
                 ),
                 Field::new(
                     "angular_velocity".to_string(),
-                    FieldValue::Base(BaseValue::Complex(Message {
-                        name: "Vector3".to_string(),
-                        value: vec![
-                            Field::new(
-                                "x".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    0.1,
-                                ))),
-                            ),
-                            Field::new(
-                                "y".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    0.2,
-                                ))),
-                            ),
-                            Field::new(
-                                "z".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    0.3,
-                                ))),
-                            ),
-                        ],
-                    })),
+                    FieldValue::Base(BaseValue::Complex(create_vector3_message(0.1, 0.2, 0.3))),
                 ),
                 Field::new(
                     "angular_velocity_covariance".to_string(),
-                    FieldValue::Array(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                    ]),
+                    create_float64_array(vec![0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]),
                 ),
                 Field::new(
                     "linear_acceleration".to_string(),
-                    FieldValue::Base(BaseValue::Complex(Message {
-                        name: "Vector3".to_string(),
-                        value: vec![
-                            Field::new(
-                                "x".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    1.0,
-                                ))),
-                            ),
-                            Field::new(
-                                "y".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    2.0,
-                                ))),
-                            ),
-                            Field::new(
-                                "z".to_string(),
-                                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(
-                                    3.0,
-                                ))),
-                            ),
-                        ],
-                    })),
+                    FieldValue::Base(BaseValue::Complex(create_vector3_message(1.0, 2.0, 3.0))),
                 ),
                 Field::new(
                     "linear_acceleration_covariance".to_string(),
-                    FieldValue::Array(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                    ]),
+                    create_float64_array(vec![0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1]),
                 ),
             ],
         };
         expected_ros_msg_values.push(imu_msg_value);
 
-        let joint_state_time_msg_value = Message {
-            name: "Time".to_string(),
-            value: vec![
-                Field::new(
-                    "sec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(0))),
-                ),
-                Field::new(
-                    "nanosec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(0))),
-                ),
-            ],
-        };
-
-        let joint_state_header_msg_value = Message {
-            name: "Header".to_string(),
-            value: vec![
-                Field::new(
-                    "stamp".to_string(),
-                    FieldValue::Base(BaseValue::Complex(joint_state_time_msg_value)),
-                ),
-                Field::new(
-                    "frame_id".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String("".to_string()))),
-                ),
-            ],
-        };
+        let joint_state_time_msg_value = create_time_message(0, 0);
+        let joint_state_header_msg_value = create_header_message(joint_state_time_msg_value, "");
 
         let joint_state_msg_value = Message {
             name: "JointState".to_string(),
@@ -883,35 +550,19 @@ mod tests {
                 ),
                 Field::new(
                     "name".to_string(),
-                    FieldValue::Sequence(vec![
-                        BaseValue::Primitive(PrimitiveValue::String("joint1".to_string())),
-                        BaseValue::Primitive(PrimitiveValue::String("joint2".to_string())),
-                        BaseValue::Primitive(PrimitiveValue::String("joint3".to_string())),
-                    ]),
+                    create_string_sequence(vec!["joint1", "joint2", "joint3"]),
                 ),
                 Field::new(
                     "position".to_string(),
-                    FieldValue::Sequence(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(1.5)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(-0.5)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                    ]),
+                    create_float64_sequence(vec![1.5, -0.5, 0.8]),
                 ),
                 Field::new(
                     "velocity".to_string(),
-                    FieldValue::Sequence(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                    ]),
+                    create_float64_sequence(vec![0.1, 0.2, 0.3]),
                 ),
                 Field::new(
                     "effort".to_string(),
-                    FieldValue::Sequence(vec![
-                        BaseValue::Primitive(PrimitiveValue::Float64(10.1)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(10.2)),
-                        BaseValue::Primitive(PrimitiveValue::Float64(10.3)),
-                    ]),
+                    create_float64_sequence(vec![10.1, 10.2, 10.3]),
                 ),
             ],
         };

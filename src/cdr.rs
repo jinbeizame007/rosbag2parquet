@@ -296,27 +296,11 @@ impl<'a> CdrDeserializer<'a> {
 mod tests {
     use super::*;
     use byteorder::{BigEndian, ByteOrder};
-    use crate::ros::{BaseValue, Field, FieldValue, PrimitiveValue};
+    use crate::ros::test_helpers::*;
 
     #[test]
     fn test_cdr_deserializer_vector3d() {
-        let vector3d_msg_definition = MessageDefinition::new(
-            "Vector3",
-            vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "x",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "y",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "z",
-                ),
-            ],
-        );
+        let vector3d_msg_definition = create_vector3_definition();
         let vector3d_msg_definition_table = HashMap::from([("Vector3", vector3d_msg_definition)]);
 
         let header: Vec<u8> = vec![0x00, 0x00, 0x00, 0x00];
@@ -337,25 +321,7 @@ mod tests {
 
         let mut cdr_deserializer = CdrDeserializer::new(&vector3d_msg_definition_table);
         let value = cdr_deserializer.parse("Vector3", &data);
-        assert_eq!(
-            value,
-            Message {
-                name: "Vector3".to_string(),
-                value: vec![
-                    Field::new(
-                        "x".to_string(),
-                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(1.0)))
-                    ),
-                    Field::new(
-                        "y".to_string(),
-                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(2.0)))
-                    ),
-                    Field::new(
-                        "z".to_string(),
-                        FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(3.0)))
-                    ),
-                ]
-            }
-        );
+        let expected = create_vector3_message(1.0, 2.0, 3.0);
+        assert_eq!(value, expected);
     }
 }

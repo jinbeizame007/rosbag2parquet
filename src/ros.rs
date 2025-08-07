@@ -109,3 +109,236 @@ pub struct SchemaSection<'a> {
     pub type_name: &'a str,
     pub content: &'a str,
 }
+
+#[cfg(test)]
+pub mod test_helpers {
+    use super::*;
+
+    // MessageDefinition helper functions
+    pub fn create_vector3_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "Vector3",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
+                    "x",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
+                    "y",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
+                    "z",
+                ),
+            ],
+        )
+    }
+
+    pub fn create_time_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "Time",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
+                    "sec",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
+                    "nanosec",
+                ),
+            ],
+        )
+    }
+
+    pub fn create_header_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "Header",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Time".to_string())),
+                    "stamp",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Primitive(Primitive::String)),
+                    "frame_id",
+                ),
+            ],
+        )
+    }
+
+    pub fn create_twist_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "Twist",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
+                    "linear",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
+                    "angular",
+                ),
+            ],
+        )
+    }
+
+    pub fn create_twist_stamped_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "TwistStamped",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Header".to_string())),
+                    "header",
+                ),
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Twist".to_string())),
+                    "twist",
+                ),
+            ],
+        )
+    }
+
+    pub fn create_joint_state_definition() -> MessageDefinition<'static> {
+        MessageDefinition::new(
+            "JointState",
+            vec![
+                FieldDefinition::new(
+                    FieldType::Base(BaseType::Complex("Header".to_string())),
+                    "header",
+                ),
+                FieldDefinition::new(
+                    FieldType::Sequence(BaseType::Primitive(Primitive::String)),
+                    "name",
+                ),
+                FieldDefinition::new(
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
+                    "position",
+                ),
+                FieldDefinition::new(
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
+                    "velocity",
+                ),
+                FieldDefinition::new(
+                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
+                    "effort",
+                ),
+            ],
+        )
+    }
+
+    // Message value creation helper functions
+    pub fn create_vector3_message(x: f64, y: f64, z: f64) -> Message {
+        Message {
+            name: "Vector3".to_string(),
+            value: vec![
+                Field::new(
+                    "x".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(x))),
+                ),
+                Field::new(
+                    "y".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(y))),
+                ),
+                Field::new(
+                    "z".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(z))),
+                ),
+            ],
+        }
+    }
+
+    pub fn create_time_message(sec: i32, nanosec: u32) -> Message {
+        Message {
+            name: "Time".to_string(),
+            value: vec![
+                Field::new(
+                    "sec".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(sec))),
+                ),
+                Field::new(
+                    "nanosec".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(nanosec))),
+                ),
+            ],
+        }
+    }
+
+    pub fn create_header_message(time_msg: Message, frame_id: &str) -> Message {
+        Message {
+            name: "Header".to_string(),
+            value: vec![
+                Field::new(
+                    "stamp".to_string(),
+                    FieldValue::Base(BaseValue::Complex(time_msg)),
+                ),
+                Field::new(
+                    "frame_id".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(frame_id.to_string()))),
+                ),
+            ],
+        }
+    }
+
+    pub fn create_quaternion_message(x: f64, y: f64, z: f64, w: f64) -> Message {
+        Message {
+            name: "Quaternion".to_string(),
+            value: vec![
+                Field::new(
+                    "x".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(x))),
+                ),
+                Field::new(
+                    "y".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(y))),
+                ),
+                Field::new(
+                    "z".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(z))),
+                ),
+                Field::new(
+                    "w".to_string(),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(w))),
+                ),
+            ],
+        }
+    }
+
+    pub fn create_string_message(data: &str) -> Message {
+        Message {
+            name: "String".to_string(),
+            value: vec![Field::new(
+                "data".to_string(),
+                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(data.to_string()))),
+            )],
+        }
+    }
+
+    // FieldValue creation helper functions
+    pub fn create_float64_array(values: Vec<f64>) -> FieldValue {
+        FieldValue::Array(
+            values
+                .into_iter()
+                .map(|v| BaseValue::Primitive(PrimitiveValue::Float64(v)))
+                .collect(),
+        )
+    }
+
+    pub fn create_string_sequence(values: Vec<&str>) -> FieldValue {
+        FieldValue::Sequence(
+            values
+                .into_iter()
+                .map(|v| BaseValue::Primitive(PrimitiveValue::String(v.to_string())))
+                .collect(),
+        )
+    }
+
+    pub fn create_float64_sequence(values: Vec<f64>) -> FieldValue {
+        FieldValue::Sequence(
+            values
+                .into_iter()
+                .map(|v| BaseValue::Primitive(PrimitiveValue::Float64(v)))
+                .collect(),
+        )
+    }
+}
