@@ -25,7 +25,7 @@ pub struct RosMsgDefinition<'a> {
 impl<'a> RosMsgDefinition<'a> {
     pub fn new(name: &'a str, fields: Vec<RosField<'a>>) -> RosMsgDefinition<'a> {
         RosMsgDefinition {
-            name: extract_schema_name(name),
+            name: extract_message_type(name),
             fields,
         }
     }
@@ -47,7 +47,7 @@ impl<'a> RosField<'a> {
     pub fn new(data_type: RosDataType, name: &'a str) -> RosField<'a> {
         RosField {
             data_type,
-            name: extract_schema_name(name),
+            name: extract_message_type(name),
         }
     }
 }
@@ -162,15 +162,15 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
-fn extract_schema_name(full_name: &str) -> &str {
-    full_name.rsplit('/').next().unwrap_or(full_name)
+fn extract_message_type(full_type_name: &str) -> &str {
+    full_type_name.rsplit('/').next().unwrap_or(full_type_name)
 }
 
 fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>> {
     let mcap_file = read_mcap(path)?;
 
     // First, collect all schema data
-    let mut schema_registry = HashMap::new();
+    let mut type_registry = HashMap::new();
     let message_stream = MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     for (index, message_result) in message_stream.enumerate() {
@@ -178,18 +178,18 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            let schema_name = extract_schema_name(&schema.name).to_string();
-            if !schema_registry.contains_key(&schema_name) {
-                schema_registry.insert(schema_name, schema.data.clone());
+            let type_name = extract_message_type(&schema.name).to_string();
+            if !type_registry.contains_key(&type_name) {
+                type_registry.insert(type_name, schema.data.clone());
             }
         }
     }
 
     // Build message definition table from collected schemas
     let mut msg_definition_table = HashMap::new();
-    for (schema_name, schema_data) in &schema_registry {
+    for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = parse_schema_sections(type_name, schema_text);
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
@@ -203,8 +203,8 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            let schema_name = extract_schema_name(&schema.name).to_string();
-            let parsed_message = cdr_deserializer.parse(&schema_name, &message.data);
+            let type_name = extract_message_type(&schema.name).to_string();
+            let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
             parsed_messages.push(parsed_message);
         }
     }
@@ -275,7 +275,7 @@ fn parse_msg_definition_from_schema_section<'a>(
 ) {
     for schema_section in schema_sections.iter().rev() {
         // Use the short name as the key
-        let short_name = extract_schema_name(schema_section.type_name);
+        let short_name = extract_message_type(schema_section.type_name);
 
         if msg_definition_table.contains_key(short_name) {
             continue;
@@ -312,7 +312,7 @@ fn parse_msg_definition_from_schema_section<'a>(
 // *******************************
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub enum Endianess {
+pub enum Endianness {
     BigEndian,
     LittleEndian,
 }
@@ -320,7 +320,7 @@ pub enum Endianess {
 pub struct CdrDeserializer<'a> {
     position: usize,
     msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>,
-    endianess: Endianess,
+    byte_order: Endianness,
 }
 
 impl<'a> CdrDeserializer<'a> {
@@ -328,7 +328,7 @@ impl<'a> CdrDeserializer<'a> {
         Self {
             position: 0,
             msg_definition_table,
-            endianess: Endianess::BigEndian,
+            byte_order: Endianness::BigEndian,
         }
     }
 
@@ -345,10 +345,10 @@ impl<'a> CdrDeserializer<'a> {
     }
 
     fn parse<'b>(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
-        self.endianess = if data[1] == 0x00 {
-            Endianess::BigEndian
+        self.byte_order = if data[1] == 0x00 {
+            Endianness::BigEndian
         } else {
-            Endianess::LittleEndian
+            Endianness::LittleEndian
         };
 
         self.position = 4;
@@ -415,9 +415,9 @@ impl<'a> CdrDeserializer<'a> {
     ) -> DynamicArrayRosDataValue {
         self.align_to(4);
         let header = self.next_bytes(data, 4);
-        let length = match self.endianess {
-            Endianess::BigEndian => BigEndian::read_u32(header),
-            Endianess::LittleEndian => LittleEndian::read_u32(header),
+        let length = match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u32(header),
+            Endianness::LittleEndian => LittleEndian::read_u32(header),
         };
         let mut values = Vec::new();
         for _ in 0..length {
@@ -472,18 +472,18 @@ impl<'a> CdrDeserializer<'a> {
     fn deserialize_f64(&mut self, data: &[u8]) -> f64 {
         self.align_to(8);
         let bytes = self.next_bytes(data, 8);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_f64(bytes),
-            Endianess::LittleEndian => LittleEndian::read_f64(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_f64(bytes),
+            Endianness::LittleEndian => LittleEndian::read_f64(bytes),
         }
     }
 
     fn deserialize_f32(&mut self, data: &[u8]) -> f32 {
         self.align_to(4);
         let bytes = self.next_bytes(data, 4);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_f32(bytes),
-            Endianess::LittleEndian => LittleEndian::read_f32(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_f32(bytes),
+            Endianness::LittleEndian => LittleEndian::read_f32(bytes),
         }
     }
 
@@ -495,63 +495,63 @@ impl<'a> CdrDeserializer<'a> {
     fn deserialize_i16(&mut self, data: &[u8]) -> i16 {
         self.align_to(2);
         let bytes = self.next_bytes(data, 2);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_i16(bytes),
-            Endianess::LittleEndian => LittleEndian::read_i16(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_i16(bytes),
+            Endianness::LittleEndian => LittleEndian::read_i16(bytes),
         }
     }
 
     fn deserialize_u16(&mut self, data: &[u8]) -> u16 {
         self.align_to(2);
         let bytes = self.next_bytes(data, 2);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_u16(bytes),
-            Endianess::LittleEndian => LittleEndian::read_u16(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u16(bytes),
+            Endianness::LittleEndian => LittleEndian::read_u16(bytes),
         }
     }
 
     fn deserialize_i32(&mut self, data: &[u8]) -> i32 {
         self.align_to(4);
         let bytes = self.next_bytes(data, 4);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_i32(bytes),
-            Endianess::LittleEndian => LittleEndian::read_i32(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_i32(bytes),
+            Endianness::LittleEndian => LittleEndian::read_i32(bytes),
         }
     }
 
     fn deserialize_u32(&mut self, data: &[u8]) -> u32 {
         self.align_to(4);
         let bytes = self.next_bytes(data, 4);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_u32(bytes),
-            Endianess::LittleEndian => LittleEndian::read_u32(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u32(bytes),
+            Endianness::LittleEndian => LittleEndian::read_u32(bytes),
         }
     }
 
     fn deserialize_i64(&mut self, data: &[u8]) -> i64 {
         self.align_to(8);
         let bytes = self.next_bytes(data, 8);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_i64(bytes),
-            Endianess::LittleEndian => LittleEndian::read_i64(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_i64(bytes),
+            Endianness::LittleEndian => LittleEndian::read_i64(bytes),
         }
     }
 
     fn deserialize_u64(&mut self, data: &[u8]) -> u64 {
         self.align_to(8);
         let bytes = self.next_bytes(data, 8);
-        match self.endianess {
-            Endianess::BigEndian => BigEndian::read_u64(bytes),
-            Endianess::LittleEndian => LittleEndian::read_u64(bytes),
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u64(bytes),
+            Endianness::LittleEndian => LittleEndian::read_u64(bytes),
         }
     }
 
     fn deserialize_string(&mut self, data: &[u8]) -> String {
         self.align_to(4);
         let header = self.next_bytes(data, 4);
-        let byte_length = match self.endianess {
-            Endianess::BigEndian => BigEndian::read_u32(header),
-            Endianess::LittleEndian => LittleEndian::read_u32(header),
+        let byte_length = match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u32(header),
+            Endianness::LittleEndian => LittleEndian::read_u32(header),
         };
         let bytes = self.next_bytes(data, byte_length as usize);
         let bytes_without_null = match bytes.split_last() {
