@@ -17,14 +17,14 @@ use nom::{
 };
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosMsgDefinition<'a> {
+pub struct MessageDefinition<'a> {
     pub name: &'a str,
-    pub fields: Vec<RosField<'a>>,
+    pub fields: Vec<FieldDefinition<'a>>,
 }
 
-impl<'a> RosMsgDefinition<'a> {
-    pub fn new(name: &'a str, fields: Vec<RosField<'a>>) -> RosMsgDefinition<'a> {
-        RosMsgDefinition {
+impl<'a> MessageDefinition<'a> {
+    pub fn new(name: &'a str, fields: Vec<FieldDefinition<'a>>) -> MessageDefinition<'a> {
+        MessageDefinition {
             name: extract_message_type(name),
             fields,
         }
@@ -32,20 +32,20 @@ impl<'a> RosMsgDefinition<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosMsgValue {
+pub struct Message {
     pub name: String,
-    pub value: Vec<RosFieldValue>,
+    pub value: Vec<Field>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosField<'a> {
-    pub data_type: RosDataType,
+pub struct FieldDefinition<'a> {
+    pub data_type: FieldType,
     pub name: &'a str,
 }
 
-impl<'a> RosField<'a> {
-    pub fn new(data_type: RosDataType, name: &'a str) -> RosField<'a> {
-        RosField {
+impl<'a> FieldDefinition<'a> {
+    pub fn new(data_type: FieldType, name: &'a str) -> FieldDefinition<'a> {
+        FieldDefinition {
             data_type,
             name: extract_message_type(name),
         }
@@ -53,54 +53,54 @@ impl<'a> RosField<'a> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RosFieldValue {
+pub struct Field {
     pub name: String,
-    pub value: RosDataValue,
+    pub value: FieldValue,
 }
 
-impl RosFieldValue {
-    pub fn new(name: String, value: RosDataValue) -> RosFieldValue {
-        RosFieldValue { name, value }
+impl Field {
+    pub fn new(name: String, value: FieldValue) -> Field {
+        Field { name, value }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum RosDataType {
-    NonArray(NonArrayRosDataType),
-    StaticArray {
-        data_type: NonArrayRosDataType,
+pub enum FieldType {
+    NonArray(NonArrayFieldType),
+    Array {
+        data_type: NonArrayFieldType,
         length: u32,
     },
-    DynamicArray(NonArrayRosDataType),
+    Sequence(NonArrayFieldType),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NonArrayRosDataType {
+pub enum NonArrayFieldType {
     Primitive(Primitive),
     Complex(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum RosDataValue {
-    NonArray(NonArrayRosDataValue),
-    StaticArray(StaticArrayRosDataValue),
-    DynamicArray(DynamicArrayRosDataValue),
+pub enum FieldValue {
+    NonArray(NonArrayFieldValue),
+    Array(ArrayFieldValue),
+    Sequence(SequenceFieldValue),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct DynamicArrayRosDataValue {
-    pub values: Vec<NonArrayRosDataValue>,
+pub struct SequenceFieldValue {
+    pub values: Vec<NonArrayFieldValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct StaticArrayRosDataValue {
-    pub values: Vec<NonArrayRosDataValue>,
+pub struct ArrayFieldValue {
+    pub values: Vec<NonArrayFieldValue>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum NonArrayRosDataValue {
+pub enum NonArrayFieldValue {
     Primitive(PrimitiveValue),
-    Complex(RosMsgValue),
+    Complex(Message),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -139,7 +139,6 @@ pub enum PrimitiveValue {
     String(String),
 }
 
-
 fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     let mmap = read_mcap(path)?;
     let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
@@ -166,12 +165,13 @@ fn extract_message_type(full_type_name: &str) -> &str {
     full_type_name.rsplit('/').next().unwrap_or(full_type_name)
 }
 
-fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>> {
+fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
     let mcap_file = read_mcap(path)?;
 
     // First, collect all schema data
     let mut type_registry = HashMap::new();
-    let message_stream = MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     for (index, message_result) in message_stream.enumerate() {
         let message =
@@ -195,7 +195,8 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
 
     // Process messages
     let mut parsed_messages = Vec::new();
-    let message_stream = MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
@@ -271,7 +272,7 @@ fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<
 
 fn parse_msg_definition_from_schema_section<'a>(
     schema_sections: &[SchemaSection<'a>],
-    msg_definition_table: &mut HashMap<&'a str, RosMsgDefinition<'a>>,
+    msg_definition_table: &mut HashMap<&'a str, MessageDefinition<'a>>,
 ) {
     for schema_section in schema_sections.iter().rev() {
         // Use the short name as the key
@@ -298,11 +299,11 @@ fn parse_msg_definition_from_schema_section<'a>(
             let name = line.split_whitespace().nth(1).unwrap();
 
             let data_type = ros_data_type(data_type).unwrap().1;
-            let field = RosField::new(data_type, name);
+            let field = FieldDefinition::new(data_type, name);
             fields.push(field);
         }
 
-        let msg_definition = RosMsgDefinition::new(schema_section.type_name, fields);
+        let msg_definition = MessageDefinition::new(schema_section.type_name, fields);
         msg_definition_table.insert(short_name, msg_definition);
     }
 }
@@ -319,12 +320,12 @@ pub enum Endianness {
 
 pub struct CdrDeserializer<'a> {
     position: usize,
-    msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>,
+    msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     byte_order: Endianness,
 }
 
 impl<'a> CdrDeserializer<'a> {
-    pub fn new(msg_definition_table: &'a HashMap<&'a str, RosMsgDefinition<'a>>) -> Self {
+    pub fn new(msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>) -> Self {
         Self {
             position: 0,
             msg_definition_table,
@@ -344,7 +345,7 @@ impl<'a> CdrDeserializer<'a> {
         &data[self.position - count..self.position]
     }
 
-    fn parse<'b>(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
+    fn parse<'b>(&mut self, name: &str, data: &[u8]) -> Message {
         self.byte_order = if data[1] == 0x00 {
             Endianness::BigEndian
         } else {
@@ -356,8 +357,8 @@ impl<'a> CdrDeserializer<'a> {
         self.parse_without_header(name, data)
     }
 
-    fn parse_without_header(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
-        let mut value = RosMsgValue {
+    fn parse_without_header(&mut self, name: &str, data: &[u8]) -> Message {
+        let mut value = Message {
             name: name.to_string(),
             value: Vec::new(),
         };
@@ -370,25 +371,25 @@ impl<'a> CdrDeserializer<'a> {
         value
     }
 
-    fn parse_field(&mut self, field: &'a RosField<'a>, data: &[u8]) -> RosFieldValue {
+    fn parse_field(&mut self, field: &'a FieldDefinition<'a>, data: &[u8]) -> Field {
         let value = match &field.data_type {
-            RosDataType::DynamicArray(non_array_data_type) => {
-                RosDataValue::DynamicArray(self.parse_dynamic_array(non_array_data_type, data))
+            FieldType::Sequence(non_array_data_type) => {
+                FieldValue::Sequence(self.parse_dynamic_array(non_array_data_type, data))
             }
-            RosDataType::StaticArray { data_type, length } => {
-                RosDataValue::StaticArray(self.parse_static_array(data_type, length, data))
+            FieldType::Array { data_type, length } => {
+                FieldValue::Array(self.parse_static_array(data_type, length, data))
             }
-            RosDataType::NonArray(non_array_data_type) => match non_array_data_type {
-                NonArrayRosDataType::Primitive(prim) => RosDataValue::NonArray(
-                    NonArrayRosDataValue::Primitive(self.parse_primitive(prim, data)),
+            FieldType::NonArray(non_array_data_type) => match non_array_data_type {
+                NonArrayFieldType::Primitive(prim) => FieldValue::NonArray(
+                    NonArrayFieldValue::Primitive(self.parse_primitive(prim, data)),
                 ),
-                NonArrayRosDataType::Complex(name) => RosDataValue::NonArray(
-                    NonArrayRosDataValue::Complex(self.parse_complex(name, data)),
+                NonArrayFieldType::Complex(name) => FieldValue::NonArray(
+                    NonArrayFieldValue::Complex(self.parse_complex(name, data)),
                 ),
             },
         };
 
-        RosFieldValue {
+        Field {
             name: field.name.to_string(),
             value,
         }
@@ -396,23 +397,23 @@ impl<'a> CdrDeserializer<'a> {
 
     fn parse_static_array(
         &mut self,
-        non_array_data_type: &NonArrayRosDataType,
+        non_array_data_type: &NonArrayFieldType,
         length: &u32,
         data: &[u8],
-    ) -> StaticArrayRosDataValue {
+    ) -> ArrayFieldValue {
         let mut values = Vec::new();
         for _ in 0..*length {
             let value = self.parse_non_array_data_value(non_array_data_type, data);
             values.push(value);
         }
-        StaticArrayRosDataValue { values }
+        ArrayFieldValue { values }
     }
 
     fn parse_dynamic_array(
         &mut self,
-        non_array_data_type: &NonArrayRosDataType,
+        non_array_data_type: &NonArrayFieldType,
         data: &[u8],
-    ) -> DynamicArrayRosDataValue {
+    ) -> SequenceFieldValue {
         self.align_to(4);
         let header = self.next_bytes(data, 4);
         let length = match self.byte_order {
@@ -424,20 +425,20 @@ impl<'a> CdrDeserializer<'a> {
             let value = self.parse_non_array_data_value(non_array_data_type, data);
             values.push(value);
         }
-        DynamicArrayRosDataValue { values }
+        SequenceFieldValue { values }
     }
 
     fn parse_non_array_data_value(
         &mut self,
-        non_array_data_type: &NonArrayRosDataType,
+        non_array_data_type: &NonArrayFieldType,
         data: &[u8],
-    ) -> NonArrayRosDataValue {
+    ) -> NonArrayFieldValue {
         match non_array_data_type {
-            NonArrayRosDataType::Primitive(prim) => {
-                NonArrayRosDataValue::Primitive(self.parse_primitive(prim, data))
+            NonArrayFieldType::Primitive(prim) => {
+                NonArrayFieldValue::Primitive(self.parse_primitive(prim, data))
             }
-            NonArrayRosDataType::Complex(name) => {
-                NonArrayRosDataValue::Complex(self.parse_complex(name, data))
+            NonArrayFieldType::Complex(name) => {
+                NonArrayFieldValue::Complex(self.parse_complex(name, data))
             }
         }
     }
@@ -561,9 +562,9 @@ impl<'a> CdrDeserializer<'a> {
         std::str::from_utf8(bytes_without_null).unwrap().to_string()
     }
 
-    fn parse_complex(&mut self, name: &str, data: &[u8]) -> RosMsgValue {
+    fn parse_complex(&mut self, name: &str, data: &[u8]) -> Message {
         let msg_definition = self.msg_definition_table.get(name).unwrap();
-        let mut ros_msg_value = RosMsgValue {
+        let mut ros_msg_value = Message {
             name: name.to_string(),
             value: Vec::new(),
         };
@@ -577,10 +578,10 @@ impl<'a> CdrDeserializer<'a> {
     }
 }
 
-fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
+fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
     if input.ends_with("[]") {
         let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
-        return Ok((rest, RosDataType::DynamicArray(data_type)));
+        return Ok((rest, FieldType::Sequence(data_type)));
     }
 
     if input.ends_with("]") {
@@ -591,22 +592,22 @@ fn ros_data_type(input: &str) -> IResult<&str, RosDataType> {
             .collect::<Vec<&str>>();
         let (rest, data_type) = non_array_ros_data_type(data_type_and_length[0])?;
         let length = data_type_and_length[1].parse::<u32>().unwrap();
-        return Ok((rest, RosDataType::StaticArray { data_type, length }));
+        return Ok((rest, FieldType::Array { data_type, length }));
     }
 
     let (rest, data_type) = non_array_ros_data_type(input)?;
-    Ok((rest, RosDataType::NonArray(data_type)))
+    Ok((rest, FieldType::NonArray(data_type)))
 }
 
-fn non_array_ros_data_type(input: &str) -> IResult<&str, NonArrayRosDataType> {
+fn non_array_ros_data_type(input: &str) -> IResult<&str, NonArrayFieldType> {
     if let Ok((rest, prim)) = primitive_type(input) {
-        return Ok((rest, NonArrayRosDataType::Primitive(prim)));
+        return Ok((rest, NonArrayFieldType::Primitive(prim)));
     }
 
     // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
         recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
-        |full_type: &str| NonArrayRosDataType::Complex(full_type.to_string()),
+        |full_type: &str| NonArrayFieldType::Complex(full_type.to_string()),
     );
     parser.parse(input)
 }
@@ -649,7 +650,7 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
-            RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64))
+            FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64))
         );
 
         let input = "sensor_msgs/msg/Temperature";
@@ -657,7 +658,7 @@ mod tests {
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
-            RosDataType::NonArray(NonArrayRosDataType::Complex(
+            FieldType::NonArray(NonArrayFieldType::Complex(
                 "sensor_msgs/msg/Temperature".to_string(),
             ))
         );
@@ -756,19 +757,19 @@ mod tests {
         assert_eq!(msg_definition_table.len(), 1);
         assert_eq!(
             msg_definition_table.get("Vector3"),
-            Some(&RosMsgDefinition::new(
+            Some(&MessageDefinition::new(
                 schema_name,
                 vec![
-                    RosField::new(
-                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    FieldDefinition::new(
+                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                         "x",
                     ),
-                    RosField::new(
-                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    FieldDefinition::new(
+                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                         "y",
                     ),
-                    RosField::new(
-                        RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                    FieldDefinition::new(
+                        FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                         "z",
                     ),
                 ],
@@ -786,79 +787,79 @@ mod tests {
 
         let mut expected_msg_definition_table = HashMap::new();
 
-        let time_msg_definition = RosMsgDefinition::new(
+        let time_msg_definition = MessageDefinition::new(
             "builtin_interfaces/Time",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Int32)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Int32)),
                     "sec",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::UInt32)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::UInt32)),
                     "nanosec",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
-        let header_msg_definition = RosMsgDefinition::new(
+        let header_msg_definition = MessageDefinition::new(
             "std_msgs/Header",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Time".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Time".to_string())),
                     "stamp",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::String)),
                     "frame_id",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
-        let vector3d_msg_definition = RosMsgDefinition::new(
+        let vector3d_msg_definition = MessageDefinition::new(
             "geometry_msgs/Vector3",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "x",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "y",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "z",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
 
-        let twist_msg_definition = RosMsgDefinition::new(
+        let twist_msg_definition = MessageDefinition::new(
             "geometry_msgs/Twist",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Vector3".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Vector3".to_string())),
                     "linear",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Vector3".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Vector3".to_string())),
                     "angular",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
 
-        let twist_stamped_msg_definition = RosMsgDefinition::new(
+        let twist_stamped_msg_definition = MessageDefinition::new(
             "geometry_msgs/msg/TwistStamped",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Header".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Header".to_string())),
                     "header",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Twist".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Twist".to_string())),
                     "twist",
                 ),
             ],
@@ -911,57 +912,57 @@ mod tests {
 
         let mut expected_msg_definition_table = HashMap::new();
 
-        let time_msg_definition = RosMsgDefinition::new(
+        let time_msg_definition = MessageDefinition::new(
             "builtin_interfaces/Time",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Int32)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Int32)),
                     "sec",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::UInt32)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::UInt32)),
                     "nanosec",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Time", time_msg_definition.clone());
 
-        let header_msg_definition = RosMsgDefinition::new(
+        let header_msg_definition = MessageDefinition::new(
             "std_msgs/Header",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Time".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Time".to_string())),
                     "stamp",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::String)),
                     "frame_id",
                 ),
             ],
         );
         expected_msg_definition_table.insert("Header", header_msg_definition.clone());
 
-        let joint_state_msg_definition = RosMsgDefinition::new(
+        let joint_state_msg_definition = MessageDefinition::new(
             "sensor_msgs/msg/JointState",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Complex("Header".to_string())),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Complex("Header".to_string())),
                     "header",
                 ),
-                RosField::new(
-                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::String)),
+                FieldDefinition::new(
+                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::String)),
                     "name",
                 ),
-                RosField::new(
-                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "position",
                 ),
-                RosField::new(
-                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "velocity",
                 ),
-                RosField::new(
-                    RosDataType::DynamicArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::Sequence(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "effort",
                 ),
             ],
@@ -977,19 +978,19 @@ mod tests {
 
     #[test]
     fn test_cdr_deserializer_vector3d() {
-        let vector3d_msg_definition = RosMsgDefinition::new(
+        let vector3d_msg_definition = MessageDefinition::new(
             "geometry_msgs/Vector3",
             vec![
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "x",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "y",
                 ),
-                RosField::new(
-                    RosDataType::NonArray(NonArrayRosDataType::Primitive(Primitive::Float64)),
+                FieldDefinition::new(
+                    FieldType::NonArray(NonArrayFieldType::Primitive(Primitive::Float64)),
                     "z",
                 ),
             ],
@@ -1016,24 +1017,24 @@ mod tests {
         let value = cdr_deserializer.parse("Vector3", &data);
         assert_eq!(
             value,
-            RosMsgValue {
+            Message {
                 name: "Vector3".to_string(),
                 value: vec![
-                    RosFieldValue::new(
+                    Field::new(
                         "x".to_string(),
-                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
                             PrimitiveValue::Float64(1.0)
                         ))
                     ),
-                    RosFieldValue::new(
+                    Field::new(
                         "y".to_string(),
-                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
                             PrimitiveValue::Float64(2.0)
                         ))
                     ),
-                    RosFieldValue::new(
+                    Field::new(
                         "z".to_string(),
-                        RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                        FieldValue::NonArray(NonArrayFieldValue::Primitive(
                             PrimitiveValue::Float64(3.0)
                         ))
                     ),
@@ -1049,97 +1050,97 @@ mod tests {
 
         let mut expected_ros_msg_values = Vec::new();
 
-        let linear_msg_value = RosMsgValue {
+        let linear_msg_value = Message {
             name: "Vector3".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "x".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(1.2),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        1.2,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "y".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "z".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
             ],
         };
-        let angular_msg_value = RosMsgValue {
+        let angular_msg_value = Message {
             name: "Vector3".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "x".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "y".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "z".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(-0.6),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        -0.6,
+                    ))),
                 ),
             ],
         };
-        let twist_msg_value = RosMsgValue {
+        let twist_msg_value = Message {
             name: "Twist".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "linear".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(linear_msg_value)),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(linear_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "angular".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(angular_msg_value)),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(angular_msg_value)),
                 ),
             ],
         };
         expected_ros_msg_values.push(twist_msg_value);
 
-        let vector3d_msg_value = RosMsgValue {
+        let vector3d_msg_value = Message {
             name: "Vector3".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "x".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(1.1),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        1.1,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "y".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(2.2),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        2.2,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "z".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(3.3),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        3.3,
+                    ))),
                 ),
             ],
         };
         expected_ros_msg_values.push(vector3d_msg_value);
 
-        let string_msg_value = RosMsgValue {
+        let string_msg_value = Message {
             name: "String".to_string(),
-            value: vec![RosFieldValue::new(
+            value: vec![Field::new(
                 "data".to_string(),
-                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
                     "Hello, World!".to_string(),
                 ))),
             )],
@@ -1157,180 +1158,174 @@ mod tests {
 
         let mut expected_ros_msg_values = Vec::new();
 
-        let imu_time_msg_value = RosMsgValue {
+        let imu_time_msg_value = Message {
             name: "Time".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "sec".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(PrimitiveValue::Int32(
-                        0,
-                    ))),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Int32(0))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "nanosec".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::UInt32(0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::UInt32(0))),
                 ),
             ],
         };
 
-        let imu_header_msg_value = RosMsgValue {
+        let imu_header_msg_value = Message {
             name: "Header".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "stamp".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(imu_time_msg_value)),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_time_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "frame_id".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::String("imu_link".to_string()),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
+                        "imu_link".to_string(),
+                    ))),
                 ),
             ],
         };
 
-        let imu_orientation_msg_value = RosMsgValue {
+        let imu_orientation_msg_value = Message {
             name: "Quaternion".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "x".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "y".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "z".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(0.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        0.0,
+                    ))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "w".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::Float64(1.0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Float64(
+                        1.0,
+                    ))),
                 ),
             ],
         };
 
-        let imu_msg_value = RosMsgValue {
+        let imu_msg_value = Message {
             name: "Imu".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "header".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(imu_header_msg_value)),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_header_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "orientation".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
-                        imu_orientation_msg_value,
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(imu_orientation_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "orientation_covariance".to_string(),
-                    RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.9)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.4)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.5)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.6)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.7)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.9)),
                         ],
                     }),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "angular_velocity".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(RosMsgValue {
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(Message {
                         name: "Vector3".to_string(),
                         value: vec![
-                            RosFieldValue::new(
+                            Field::new(
                                 "x".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(0.1),
                                 )),
                             ),
-                            RosFieldValue::new(
+                            Field::new(
                                 "y".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(0.2),
                                 )),
                             ),
-                            RosFieldValue::new(
+                            Field::new(
                                 "z".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(0.3),
                                 )),
                             ),
                         ],
                     })),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "angular_velocity_covariance".to_string(),
-                    RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.9)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.9)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.7)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.6)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.5)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.4)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
                         ],
                     }),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "linear_acceleration".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(RosMsgValue {
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(Message {
                         name: "Vector3".to_string(),
                         value: vec![
-                            RosFieldValue::new(
+                            Field::new(
                                 "x".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(1.0),
                                 )),
                             ),
-                            RosFieldValue::new(
+                            Field::new(
                                 "y".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(2.0),
                                 )),
                             ),
-                            RosFieldValue::new(
+                            Field::new(
                                 "z".to_string(),
-                                RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
+                                FieldValue::NonArray(NonArrayFieldValue::Primitive(
                                     PrimitiveValue::Float64(3.0),
                                 )),
                             ),
                         ],
                     })),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "linear_acceleration_covariance".to_string(),
-                    RosDataValue::StaticArray(StaticArrayRosDataValue {
+                    FieldValue::Array(ArrayFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.0)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
                         ],
                     }),
                 ),
@@ -1338,94 +1333,86 @@ mod tests {
         };
         expected_ros_msg_values.push(imu_msg_value);
 
-        let joint_state_time_msg_value = RosMsgValue {
+        let joint_state_time_msg_value = Message {
             name: "Time".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "sec".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(PrimitiveValue::Int32(
-                        0,
-                    ))),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::Int32(0))),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "nanosec".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::UInt32(0),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::UInt32(0))),
                 ),
             ],
         };
 
-        let joint_state_header_msg_value = RosMsgValue {
+        let joint_state_header_msg_value = Message {
             name: "Header".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "stamp".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
-                        joint_state_time_msg_value,
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(joint_state_time_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "frame_id".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Primitive(
-                        PrimitiveValue::String("".to_string()),
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Primitive(PrimitiveValue::String(
+                        "".to_string(),
+                    ))),
                 ),
             ],
         };
 
-        let joint_state_msg_value = RosMsgValue {
+        let joint_state_msg_value = Message {
             name: "JointState".to_string(),
             value: vec![
-                RosFieldValue::new(
+                Field::new(
                     "header".to_string(),
-                    RosDataValue::NonArray(NonArrayRosDataValue::Complex(
-                        joint_state_header_msg_value,
-                    )),
+                    FieldValue::NonArray(NonArrayFieldValue::Complex(joint_state_header_msg_value)),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "name".to_string(),
-                    RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
                                 "joint1".to_string(),
                             )),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
                                 "joint2".to_string(),
                             )),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::String(
+                            NonArrayFieldValue::Primitive(PrimitiveValue::String(
                                 "joint3".to_string(),
                             )),
                         ],
                     }),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "position".to_string(),
-                    RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(1.5)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(-0.5)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.8)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(1.5)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(-0.5)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.8)),
                         ],
                     }),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "velocity".to_string(),
-                    RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(0.3)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.2)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(0.3)),
                         ],
                     }),
                 ),
-                RosFieldValue::new(
+                Field::new(
                     "effort".to_string(),
-                    RosDataValue::DynamicArray(DynamicArrayRosDataValue {
+                    FieldValue::Sequence(SequenceFieldValue {
                         values: vec![
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.1)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.2)),
-                            NonArrayRosDataValue::Primitive(PrimitiveValue::Float64(10.3)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.1)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.2)),
+                            NonArrayFieldValue::Primitive(PrimitiveValue::Float64(10.3)),
                         ],
                     }),
                 ),
