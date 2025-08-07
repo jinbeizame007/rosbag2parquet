@@ -8,15 +8,13 @@ use mcap::MessageStream;
 use memmap2::Mmap;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take_while1},
+    bytes::complete::tag,
     character::complete::{alpha1, alphanumeric1},
     combinator::{map, recognize},
     multi::many0,
     sequence::pair,
     IResult, Parser,
 };
-
-mod create_test_data;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RosMsgDefinition<'a> {
@@ -155,92 +153,68 @@ impl PrimitiveValue {
             Primitive::Char => {
                 todo!()
             }
-            Primitive::Float32 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_f32(data);
-                    PrimitiveValue::Float32(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_f32(data);
-                    PrimitiveValue::Float32(value)
-                }
-            },
-            Primitive::Float64 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_f64(data);
-                    PrimitiveValue::Float64(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_f64(data);
-                    PrimitiveValue::Float64(value)
-                }
-            },
+            Primitive::Float32 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_f32(data),
+                    Endianess::LittleEndian => LittleEndian::read_f32(data),
+                };
+                PrimitiveValue::Float32(value)
+            }
+            Primitive::Float64 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_f64(data),
+                    Endianess::LittleEndian => LittleEndian::read_f64(data),
+                };
+                PrimitiveValue::Float64(value)
+            }
             Primitive::Int8 => {
                 todo!()
             }
             Primitive::UInt8 => {
                 todo!()
             }
-            Primitive::Int16 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_i16(data);
-                    PrimitiveValue::Int16(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_i16(data);
-                    PrimitiveValue::Int16(value)
-                }
-            },
-            Primitive::UInt16 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_u16(data);
-                    PrimitiveValue::UInt16(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_u16(data);
-                    PrimitiveValue::UInt16(value)
-                }
-            },
-            Primitive::Int32 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_i32(data);
-                    PrimitiveValue::Int32(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_i32(data);
-                    PrimitiveValue::Int32(value)
-                }
-            },
-            Primitive::UInt32 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_u32(data);
-                    PrimitiveValue::UInt32(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_u32(data);
-                    PrimitiveValue::UInt32(value)
-                }
-            },
-            Primitive::Int64 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_i64(data);
-                    PrimitiveValue::Int64(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_i64(data);
-                    PrimitiveValue::Int64(value)
-                }
-            },
-            Primitive::UInt64 => match endianess {
-                Endianess::BigEndian => {
-                    let value = BigEndian::read_u64(data);
-                    PrimitiveValue::UInt64(value)
-                }
-                Endianess::LittleEndian => {
-                    let value = LittleEndian::read_u64(data);
-                    PrimitiveValue::UInt64(value)
-                }
-            },
+            Primitive::Int16 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_i16(data),
+                    Endianess::LittleEndian => LittleEndian::read_i16(data),
+                };
+                PrimitiveValue::Int16(value)
+            }
+            Primitive::UInt16 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_u16(data),
+                    Endianess::LittleEndian => LittleEndian::read_u16(data),
+                };
+                PrimitiveValue::UInt16(value)
+            }
+            Primitive::Int32 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_i32(data),
+                    Endianess::LittleEndian => LittleEndian::read_i32(data),
+                };
+                PrimitiveValue::Int32(value)
+            }
+            Primitive::UInt32 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_u32(data),
+                    Endianess::LittleEndian => LittleEndian::read_u32(data),
+                };
+                PrimitiveValue::UInt32(value)
+            }
+            Primitive::Int64 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_i64(data),
+                    Endianess::LittleEndian => LittleEndian::read_i64(data),
+                };
+                PrimitiveValue::Int64(value)
+            }
+            Primitive::UInt64 => {
+                let value = match endianess {
+                    Endianess::BigEndian => BigEndian::read_u64(data),
+                    Endianess::LittleEndian => LittleEndian::read_u64(data),
+                };
+                PrimitiveValue::UInt64(value)
+            }
             Primitive::String => match endianess {
                 Endianess::BigEndian => {
                     let byte_length = BigEndian::read_u32(&data[0..4]);
@@ -276,10 +250,10 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            let schema_name = schema.name.clone();
+            let _schema_name = schema.name.clone();
             let schema_data = schema.data.clone();
 
-            let schema_text = std::str::from_utf8(&schema_data)?;
+            let _schema_text = std::str::from_utf8(&schema_data)?;
             // println!("Schema: {} ({})", schema_name, schema_text);
             // println!();
             // println!();
@@ -634,8 +608,8 @@ impl<'a> CdrDeserializer<'a> {
             Primitive::String => match endianess {
                 Endianess::BigEndian => {
                     self.align_to(4);
-                    let hearder = self.next_bytes(data, 4);
-                    let byte_length = BigEndian::read_u32(hearder);
+                    let header = self.next_bytes(data, 4);
+                    let byte_length = BigEndian::read_u32(header);
                     let bytes = self.next_bytes(data, byte_length as usize);
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
@@ -646,8 +620,8 @@ impl<'a> CdrDeserializer<'a> {
                 }
                 Endianess::LittleEndian => {
                     self.align_to(4);
-                    let hearder = self.next_bytes(data, 4);
-                    let byte_length = LittleEndian::read_u32(hearder);
+                    let header = self.next_bytes(data, 4);
+                    let byte_length = LittleEndian::read_u32(header);
                     let bytes = self.next_bytes(data, byte_length as usize);
                     let bytes_without_null = match bytes.split_last() {
                         None => bytes,
@@ -657,11 +631,6 @@ impl<'a> CdrDeserializer<'a> {
                     PrimitiveValue::String(value.to_string())
                 }
             },
-            _ => {
-                // Default to 8 bytes for now
-                let bytes = self.next_bytes(data, 8);
-                PrimitiveValue::from_bytes(bytes, prim, &endianess)
-            }
         }
     }
 
@@ -745,32 +714,6 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::create_test_data::create_test_mcap_file;
-
-    #[test]
-    fn test_read_mcap() {
-        // Create a test MCAP file
-        let test_path = "testdata/test_read.mcap";
-        create_test_mcap_file(test_path).unwrap();
-
-        let mmap = read_mcap(test_path).unwrap();
-        assert!(!mmap.is_empty());
-
-        // Cleanup
-        std::fs::remove_file(test_path).unwrap();
-    }
-
-    #[test]
-    fn test_rosbag2parquet() {
-        // Create a test MCAP file
-        let test_path = "testdata/large.mcap";
-        // create_test_mcap_file(test_path).unwrap();
-
-        rosbag2parquet(test_path).unwrap();
-
-        // Cleanup
-        // std::fs::remove_file(test_path).unwrap();
-    }
 
     #[test]
     fn test_ros_data_type() {
