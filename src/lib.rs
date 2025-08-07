@@ -126,7 +126,7 @@ pub enum PrimitiveValue {
     String(String),
 }
 
-fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     let mmap = read_mcap(path)?;
     let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
 
@@ -152,7 +152,7 @@ fn extract_message_type(full_type_name: &str) -> &str {
     full_type_name.rsplit('/').next().unwrap_or(full_type_name)
 }
 
-fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
+pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
     let mcap_file = read_mcap(path)?;
 
     // First, collect all schema data
@@ -205,7 +205,7 @@ fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
     unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
 }
 
-fn parse_msg_definition(schema_text: &str) -> Result<()> {
+pub fn parse_msg_definition(schema_text: &str) -> Result<()> {
     // let mut fields = Vec::new();
     // let mut constants = Vec::new();
 
@@ -228,7 +228,7 @@ pub struct SchemaSection<'a> {
     pub content: &'a str,
 }
 
-fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<SchemaSection<'a>> {
+pub fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<SchemaSection<'a>> {
     let mut sections = Vec::new();
 
     let delimiter =
@@ -257,7 +257,7 @@ fn parse_schema_sections<'a>(schema_name: &'a str, schema_text: &'a str) -> Vec<
     sections
 }
 
-fn parse_msg_definition_from_schema_section<'a>(
+pub fn parse_msg_definition_from_schema_section<'a>(
     schema_sections: &[SchemaSection<'a>],
     msg_definition_table: &mut HashMap<&'a str, MessageDefinition<'a>>,
 ) {
@@ -568,7 +568,7 @@ impl<'a> CdrDeserializer<'a> {
     }
 }
 
-fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
+pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
     if input.ends_with("[]") {
         let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
         return Ok((rest, FieldType::Sequence(data_type)));
