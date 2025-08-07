@@ -98,18 +98,8 @@ impl Field {
 #[derive(Clone, Debug, PartialEq)]
 pub enum FieldValue {
     Base(BaseValue),
-    Array(ArrayFieldValue),
-    Sequence(SequenceFieldValue),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct SequenceFieldValue {
-    pub values: Vec<BaseValue>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct ArrayFieldValue {
-    pub values: Vec<BaseValue>,
+    Array(Vec<BaseValue>),
+    Sequence(Vec<BaseValue>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -397,20 +387,20 @@ impl<'a> CdrDeserializer<'a> {
         non_array_data_type: &BaseType,
         length: &u32,
         data: &[u8],
-    ) -> ArrayFieldValue {
+    ) -> Vec<BaseValue> {
         let mut values = Vec::new();
         for _ in 0..*length {
             let value = self.parse_non_array_data_value(non_array_data_type, data);
             values.push(value);
         }
-        ArrayFieldValue { values }
+        values
     }
 
     fn parse_dynamic_array(
         &mut self,
         non_array_data_type: &BaseType,
         data: &[u8],
-    ) -> SequenceFieldValue {
+    ) -> Vec<BaseValue> {
         self.align_to(4);
         let header = self.next_bytes(data, 4);
         let length = match self.byte_order {
@@ -422,7 +412,7 @@ impl<'a> CdrDeserializer<'a> {
             let value = self.parse_non_array_data_value(non_array_data_type, data);
             values.push(value);
         }
-        SequenceFieldValue { values }
+        values
     }
 
     fn parse_non_array_data_value(
@@ -1190,19 +1180,17 @@ mod tests {
                 ),
                 Field::new(
                     "orientation_covariance".to_string(),
-                    FieldValue::Array(ArrayFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
-                        ],
-                    }),
+                    FieldValue::Array(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
+                    ]),
                 ),
                 Field::new(
                     "angular_velocity".to_string(),
@@ -1232,19 +1220,17 @@ mod tests {
                 ),
                 Field::new(
                     "angular_velocity_covariance".to_string(),
-                    FieldValue::Array(ArrayFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        ],
-                    }),
+                    FieldValue::Array(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.9)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.7)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.6)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.5)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.4)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                    ]),
                 ),
                 Field::new(
                     "linear_acceleration".to_string(),
@@ -1274,19 +1260,17 @@ mod tests {
                 ),
                 Field::new(
                     "linear_acceleration_covariance".to_string(),
-                    FieldValue::Array(ArrayFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                        ],
-                    }),
+                    FieldValue::Array(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.0)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                    ]),
                 ),
             ],
         };
@@ -1329,43 +1313,35 @@ mod tests {
                 ),
                 Field::new(
                     "name".to_string(),
-                    FieldValue::Sequence(SequenceFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::String("joint1".to_string())),
-                            BaseValue::Primitive(PrimitiveValue::String("joint2".to_string())),
-                            BaseValue::Primitive(PrimitiveValue::String("joint3".to_string())),
-                        ],
-                    }),
+                    FieldValue::Sequence(vec![
+                        BaseValue::Primitive(PrimitiveValue::String("joint1".to_string())),
+                        BaseValue::Primitive(PrimitiveValue::String("joint2".to_string())),
+                        BaseValue::Primitive(PrimitiveValue::String("joint3".to_string())),
+                    ]),
                 ),
                 Field::new(
                     "position".to_string(),
-                    FieldValue::Sequence(SequenceFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(1.5)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(-0.5)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
-                        ],
-                    }),
+                    FieldValue::Sequence(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(1.5)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(-0.5)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.8)),
+                    ]),
                 ),
                 Field::new(
                     "velocity".to_string(),
-                    FieldValue::Sequence(SequenceFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
-                        ],
-                    }),
+                    FieldValue::Sequence(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.1)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.2)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(0.3)),
+                    ]),
                 ),
                 Field::new(
                     "effort".to_string(),
-                    FieldValue::Sequence(SequenceFieldValue {
-                        values: vec![
-                            BaseValue::Primitive(PrimitiveValue::Float64(10.1)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(10.2)),
-                            BaseValue::Primitive(PrimitiveValue::Float64(10.3)),
-                        ],
-                    }),
+                    FieldValue::Sequence(vec![
+                        BaseValue::Primitive(PrimitiveValue::Float64(10.1)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(10.2)),
+                        BaseValue::Primitive(PrimitiveValue::Float64(10.3)),
+                    ]),
                 ),
             ],
         };
