@@ -25,7 +25,7 @@ pub struct RosMsgDefinition<'a> {
 impl<'a> RosMsgDefinition<'a> {
     pub fn new(name: &'a str, fields: Vec<RosField<'a>>) -> RosMsgDefinition<'a> {
         RosMsgDefinition {
-            name: name.rsplit("/").next().unwrap(),
+            name: extract_schema_name(name),
             fields,
         }
     }
@@ -47,7 +47,7 @@ impl<'a> RosField<'a> {
     pub fn new(data_type: RosDataType, name: &'a str) -> RosField<'a> {
         RosField {
             data_type,
-            name: name.rsplit("/").next().unwrap(),
+            name: extract_schema_name(name),
         }
     }
 }
@@ -162,36 +162,40 @@ fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     Ok(())
 }
 
+fn extract_schema_name(full_name: &str) -> &str {
+    full_name.rsplit('/').next().unwrap_or(full_name)
+}
+
 fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>> {
-    let mmap = read_mcap(path)?;
+    let mcap_file = read_mcap(path)?;
 
     // First, collect all schema data
-    let mut schema_map = HashMap::new();
-    let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
+    let mut schema_registry = HashMap::new();
+    let message_stream = MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     for (index, message_result) in message_stream.enumerate() {
         let message =
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            if !schema_map.contains_key(&schema_name) {
-                schema_map.insert(schema_name, schema.data.clone());
+            let schema_name = extract_schema_name(&schema.name).to_string();
+            if !schema_registry.contains_key(&schema_name) {
+                schema_registry.insert(schema_name, schema.data.clone());
             }
         }
     }
 
     // Build message definition table from collected schemas
     let mut msg_definition_table = HashMap::new();
-    for (schema_name, schema_data) in &schema_map {
+    for (schema_name, schema_data) in &schema_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
         let sections = parse_schema_sections(schema_name, schema_text);
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
     // Process messages
-    let mut ros_msg_values = Vec::new();
-    let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
+    let mut parsed_messages = Vec::new();
+    let message_stream = MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
@@ -199,13 +203,13 @@ fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RosMsgValue>
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            let schema_name = schema.name.rsplit("/").next().unwrap().to_string();
-            let ros_msg_value = cdr_deserializer.parse(&schema_name, &message.data);
-            ros_msg_values.push(ros_msg_value);
+            let schema_name = extract_schema_name(&schema.name).to_string();
+            let parsed_message = cdr_deserializer.parse(&schema_name, &message.data);
+            parsed_messages.push(parsed_message);
         }
     }
 
-    Ok(ros_msg_values)
+    Ok(parsed_messages)
 }
 
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
@@ -271,7 +275,7 @@ fn parse_msg_definition_from_schema_section<'a>(
 ) {
     for schema_section in schema_sections.iter().rev() {
         // Use the short name as the key
-        let short_name = schema_section.type_name.rsplit("/").next().unwrap();
+        let short_name = extract_schema_name(schema_section.type_name);
 
         if msg_definition_table.contains_key(short_name) {
             continue;
