@@ -3,8 +3,16 @@ pub mod ros;
 
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use arrow::array::{
+    ArrayBuilder, BooleanBuilder, Float32Builder, Float64Builder, Int16Builder, Int32Builder,
+    Int64Builder, Int8Builder, ListBuilder, StringBuilder, UInt16Builder, UInt32Builder,
+    UInt64Builder, UInt8Builder,
+};
+use arrow::datatypes::{DataType, Field, Schema};
+use arrow::record_batch::RecordBatch;
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -253,6 +261,108 @@ fn identifier(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
+struct MessageDefinitionToArrowSchemaConverter<'a> {
+    message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
+}
+
+impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
+    pub fn new(message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>) -> Self {
+        Self {
+            message_definition_table,
+        }
+    }
+
+    pub fn convert(&self, name: &str) -> Schema {
+        let message_definition = self.message_definition_table.get(name).unwrap();
+        let fields: Vec<Field> = message_definition
+            .fields
+            .iter()
+            .map(|field| self.ros_field_to_arrow_field(field))
+            .collect();
+        Schema::new(fields)
+    }
+
+    pub fn convert_all(&self) -> HashMap<&'a str, Schema> {
+        let mut schemas = HashMap::new();
+        for (name, message_definition) in self.message_definition_table.iter() {
+            schemas.insert(*name, self.convert(name));
+        }
+        schemas
+    }
+
+    fn ros_field_to_arrow_field(&self, field: &FieldDefinition<'a>) -> Field {
+        let arrow_type = match &field.data_type {
+            FieldType::Base(base_type) => self.ros_base_type_to_arrow_data_type(base_type),
+            FieldType::Array { data_type, length } => {
+                self.ros_array_type_to_arrow_data_type(data_type, *length)
+            }
+            FieldType::Sequence(data_type) => self.ros_sequence_type_to_arrow_data_type(data_type),
+        };
+
+        Field::new(field.name, arrow_type, true)
+    }
+
+    fn ros_array_type_to_arrow_data_type(&self, data_type: &BaseType, length: u32) -> DataType {
+        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
+        let array_arrow_type = DataType::FixedSizeList(
+            Arc::new(Field::new("item", base_arrow_type, true)),
+            length as i32,
+        );
+        array_arrow_type
+    }
+
+    fn ros_sequence_type_to_arrow_data_type(&self, data_type: &BaseType) -> DataType {
+        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
+        let sequence_arrow_type =
+            DataType::List(Arc::new(Field::new("item", base_arrow_type, true)));
+        sequence_arrow_type
+    }
+
+    fn ros_base_type_to_arrow_data_type(&self, base_type: &BaseType) -> DataType {
+        match base_type {
+            BaseType::Primitive(primitive) => self.ros_primitive_to_arrow_data_type(primitive),
+            BaseType::Complex(name) => {
+                let message_definition = self.message_definition_table.get(name.as_str()).unwrap();
+                let fields = message_definition
+                    .fields
+                    .iter()
+                    .map(|field| self.ros_field_to_arrow_field(field))
+                    .collect();
+                DataType::Struct(fields)
+            }
+        }
+    }
+
+    fn ros_primitive_to_arrow_data_type(&self, primitive: &Primitive) -> DataType {
+        match primitive {
+            Primitive::Bool => DataType::Boolean,
+            Primitive::Byte => DataType::UInt8,
+            Primitive::Char => DataType::UInt8,
+            Primitive::Float32 => DataType::Float32,
+            Primitive::Float64 => DataType::Float64,
+            Primitive::Int8 => DataType::Int8,
+            Primitive::UInt8 => DataType::UInt8,
+            Primitive::Int16 => DataType::Int16,
+            Primitive::UInt16 => DataType::UInt16,
+            Primitive::Int32 => DataType::Int32,
+            Primitive::UInt32 => DataType::UInt32,
+            Primitive::Int64 => DataType::Int64,
+            Primitive::UInt64 => DataType::UInt64,
+            Primitive::String => DataType::Utf8,
+        }
+    }
+
+    fn ros_complex_type_to_arrow_data_type(&self, name: &str) -> DataType {
+        let message_definition = self.message_definition_table.get(name).unwrap();
+        let fields = message_definition
+            .fields
+            .iter()
+            .map(|field| self.ros_field_to_arrow_field(field))
+            .collect();
+        DataType::Struct(fields)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -473,11 +583,11 @@ mod tests {
         let twist_msg_value = Message {
             name: "Twist".to_string(),
             value: vec![
-                Field::new(
+                ros::Field::new(
                     "linear".to_string(),
                     FieldValue::Base(BaseValue::Complex(linear_msg_value)),
                 ),
-                Field::new(
+                ros::Field::new(
                     "angular".to_string(),
                     FieldValue::Base(BaseValue::Complex(angular_msg_value)),
                 ),
@@ -506,31 +616,31 @@ mod tests {
         let imu_msg_value = Message {
             name: "Imu".to_string(),
             value: vec![
-                Field::new(
+                ros::Field::new(
                     "header".to_string(),
                     FieldValue::Base(BaseValue::Complex(imu_header_msg_value)),
                 ),
-                Field::new(
+                ros::Field::new(
                     "orientation".to_string(),
                     FieldValue::Base(BaseValue::Complex(imu_orientation_msg_value)),
                 ),
-                Field::new(
+                ros::Field::new(
                     "orientation_covariance".to_string(),
                     create_float64_array(vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]),
                 ),
-                Field::new(
+                ros::Field::new(
                     "angular_velocity".to_string(),
                     FieldValue::Base(BaseValue::Complex(create_vector3_message(0.1, 0.2, 0.3))),
                 ),
-                Field::new(
+                ros::Field::new(
                     "angular_velocity_covariance".to_string(),
                     create_float64_array(vec![0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]),
                 ),
-                Field::new(
+                ros::Field::new(
                     "linear_acceleration".to_string(),
                     FieldValue::Base(BaseValue::Complex(create_vector3_message(1.0, 2.0, 3.0))),
                 ),
-                Field::new(
+                ros::Field::new(
                     "linear_acceleration_covariance".to_string(),
                     create_float64_array(vec![0.1, 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.1]),
                 ),
@@ -544,23 +654,23 @@ mod tests {
         let joint_state_msg_value = Message {
             name: "JointState".to_string(),
             value: vec![
-                Field::new(
+                ros::Field::new(
                     "header".to_string(),
                     FieldValue::Base(BaseValue::Complex(joint_state_header_msg_value)),
                 ),
-                Field::new(
+                ros::Field::new(
                     "name".to_string(),
                     create_string_sequence(vec!["joint1", "joint2", "joint3"]),
                 ),
-                Field::new(
+                ros::Field::new(
                     "position".to_string(),
                     create_float64_sequence(vec![1.5, -0.5, 0.8]),
                 ),
-                Field::new(
+                ros::Field::new(
                     "velocity".to_string(),
                     create_float64_sequence(vec![0.1, 0.2, 0.3]),
                 ),
-                Field::new(
+                ros::Field::new(
                     "effort".to_string(),
                     create_float64_sequence(vec![10.1, 10.2, 10.3]),
                 ),
