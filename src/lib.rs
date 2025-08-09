@@ -7,9 +7,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use arrow::array::{
-    ArrayBuilder, BooleanBuilder, Float32Builder, Float64Builder, Int16Builder, Int32Builder,
-    Int64Builder, Int8Builder, ListBuilder, StringBuilder, UInt16Builder, UInt32Builder,
-    UInt64Builder, UInt8Builder,
+    ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
+    Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
+    StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
@@ -272,20 +272,20 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
         }
     }
 
-    pub fn convert(&self, name: &str) -> Schema {
+    pub fn convert(&self, name: &str) -> Arc<Schema> {
         let message_definition = self.message_definition_table.get(name).unwrap();
         let fields: Vec<Field> = message_definition
             .fields
             .iter()
             .map(|field| self.ros_field_to_arrow_field(field))
             .collect();
-        Schema::new(fields)
+        Arc::new(Schema::new(fields))
     }
 
-    pub fn convert_all(&self) -> HashMap<&'a str, Schema> {
+    pub fn convert_all(&self) -> HashMap<&'a str, Arc<Schema>> {
         let mut schemas = HashMap::new();
         for (name, message_definition) in self.message_definition_table.iter() {
-            schemas.insert(*name, self.convert(name));
+            schemas.insert(*name, self.convert(name).clone());
         }
         schemas
     }
@@ -360,6 +360,446 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
             .map(|field| self.ros_field_to_arrow_field(field))
             .collect();
         DataType::Struct(fields)
+    }
+}
+
+pub struct RecordBatchBuilder<'a> {
+    schema: Arc<Schema>,
+    messages: &'a Vec<Message>,
+}
+
+impl<'a> RecordBatchBuilder<'a> {
+    pub fn new(schema: Arc<Schema>, messages: &'a Vec<Message>) -> Self {
+        Self { schema, messages }
+    }
+
+    pub fn build(&self) -> RecordBatch {
+        let mut builders = self
+            .schema
+            .fields()
+            .iter()
+            .map(|field| -> Box<dyn ArrayBuilder> {
+                match field.data_type() {
+                    DataType::Boolean => Box::new(BooleanBuilder::new()),
+                    DataType::UInt8 => Box::new(UInt8Builder::new()),
+                    DataType::UInt16 => Box::new(UInt16Builder::new()),
+                    DataType::UInt32 => Box::new(UInt32Builder::new()),
+                    DataType::UInt64 => Box::new(UInt64Builder::new()),
+                    DataType::Int8 => Box::new(Int8Builder::new()),
+                    DataType::Int16 => Box::new(Int16Builder::new()),
+                    DataType::Int32 => Box::new(Int32Builder::new()),
+                    DataType::Int64 => Box::new(Int64Builder::new()),
+                    DataType::Float32 => Box::new(Float32Builder::new()),
+                    DataType::Float64 => Box::new(Float64Builder::new()),
+                    DataType::Utf8 => Box::new(StringBuilder::new()),
+                    _ => unreachable!(),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        for message in self.messages.iter() {
+            for (i, field) in message.value.iter().enumerate() {
+                let builder = &mut builders[i];
+                self.append_value(builder, &field.value);
+            }
+        }
+
+        let arrays = builders
+            .iter_mut()
+            .map(|builder| builder.finish())
+            .collect::<Vec<_>>();
+
+        let record_batch = RecordBatch::try_new(self.schema.clone(), arrays).unwrap();
+        record_batch
+    }
+
+    pub fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
+        match value {
+            FieldValue::Base(base_value) => match base_value {
+                BaseValue::Primitive(primitive) => self.append_primitive(builder, primitive),
+                BaseValue::Complex(complex) => {
+                    let struct_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<StructBuilder>()
+                        .unwrap();
+                    self.append_complex(struct_builder, complex);
+                }
+            },
+            FieldValue::Array(array) => self.append_array(builder, array),
+            FieldValue::Sequence(sequence) => self.append_sequence(builder, sequence),
+        }
+    }
+
+    pub fn append_array(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
+        match &value[0] {
+            BaseValue::Primitive(primitive) => match primitive {
+                PrimitiveValue::Bool(_) => {
+                    let boolean_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<BooleanBuilder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Bool(b)) => {
+                                boolean_array_builder.values().append_value(*b);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    boolean_array_builder.append(true);
+                }
+                PrimitiveValue::Byte(value) => {
+                    todo!()
+                }
+                PrimitiveValue::Char(value) => {
+                    todo!()
+                }
+                PrimitiveValue::Float32(_) => {
+                    let float32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<Float32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Float32(f)) => {
+                                float32_array_builder.values().append_value(*f);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    float32_array_builder.append(true);
+                }
+                PrimitiveValue::Float64(_) => {
+                    let float64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<Float64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Float64(f)) => {
+                                float64_array_builder.values().append_value(*f);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    float64_array_builder.append(true);
+                }
+                PrimitiveValue::Int8(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt8(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int16(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt16(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int32(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt32(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int64(_) => {
+                    let int64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<Int64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Int64(i)) => {
+                                int64_array_builder.values().append_value(*i);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    int64_array_builder.append(true);
+                }
+                PrimitiveValue::UInt64(_) => {
+                    let uint64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<UInt64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::UInt64(u)) => {
+                                uint64_array_builder.values().append_value(*u);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    uint64_array_builder.append(true);
+                }
+                PrimitiveValue::String(_) => {
+                    let string_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<StringBuilder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::String(s)) => {
+                                string_array_builder.values().append_value(s);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    string_array_builder.append(true);
+                }
+            },
+            BaseValue::Complex(complex) => {
+                let struct_array_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<ListBuilder<StructBuilder>>()
+                    .unwrap();
+                for complex_value in value.iter() {
+                    match complex_value {
+                        BaseValue::Complex(complex) => {
+                            let substruct_builder = struct_array_builder
+                                .values()
+                                .as_any_mut()
+                                .downcast_mut::<StructBuilder>()
+                                .unwrap();
+                            self.append_complex(substruct_builder, complex);
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+                struct_array_builder.append(true);
+            }
+        }
+    }
+
+    pub fn append_sequence(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
+        match &value[0] {
+            BaseValue::Primitive(primitive) => match primitive {
+                PrimitiveValue::Bool(_) => {
+                    let boolean_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<BooleanBuilder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Bool(b)) => {
+                                boolean_array_builder.values().append_value(*b);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                PrimitiveValue::Byte(value) => {
+                    todo!()
+                }
+                PrimitiveValue::Char(value) => {
+                    todo!()
+                }
+                PrimitiveValue::Float32(_) => {
+                    let float32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<Float32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Float32(f)) => {
+                                float32_array_builder.values().append_value(*f);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                PrimitiveValue::Float64(_) => {
+                    let float64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<Float64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Float64(f)) => {
+                                float64_array_builder.values().append_value(*f);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                PrimitiveValue::Int8(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt8(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int16(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt16(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int32(_) => {
+                    todo!()
+                }
+                PrimitiveValue::UInt32(_) => {
+                    todo!()
+                }
+                PrimitiveValue::Int64(_) => {
+                    let int64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<Int64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Int64(i)) => {
+                                int64_array_builder.values().append_value(*i);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                PrimitiveValue::UInt64(_) => {
+                    let uint64_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<UInt64Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::UInt64(u)) => {
+                                uint64_array_builder.values().append_value(*u);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+                PrimitiveValue::String(_) => {
+                    let string_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<StringBuilder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::String(s)) => {
+                                string_array_builder.values().append_value(s);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            },
+            BaseValue::Complex(complex) => {
+                let struct_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<StructBuilder>()
+                    .unwrap();
+                self.append_complex(struct_builder, complex);
+            }
+        }
+    }
+
+    pub fn append_complex(&self, struct_builder: &mut StructBuilder, message: &Message) {
+        for (i, field_builder) in struct_builder.field_builders_mut().iter_mut().enumerate() {
+            let field = &message.value[i];
+            match &field.value {
+                FieldValue::Base(base_value) => match base_value {
+                    BaseValue::Primitive(primitive) => {
+                        self.append_primitive(field_builder, &primitive);
+                    }
+                    BaseValue::Complex(complex) => {
+                        let substruct_builder = field_builder
+                            .as_any_mut()
+                            .downcast_mut::<StructBuilder>()
+                            .unwrap();
+                        self.append_complex(substruct_builder, &complex);
+                    }
+                },
+                FieldValue::Array(array) => {
+                    self.append_array(field_builder, array);
+                }
+                FieldValue::Sequence(sequence) => {
+                    self.append_sequence(field_builder, sequence);
+                }
+            }
+        }
+
+        struct_builder.append(true);
+    }
+
+    pub fn append_primitive(&self, builder: &mut dyn ArrayBuilder, value: &PrimitiveValue) {
+        match value {
+            PrimitiveValue::Bool(value) => {
+                let boolean_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<BooleanBuilder>()
+                    .unwrap();
+                boolean_builder.append_value(*value);
+            }
+            PrimitiveValue::Byte(value) => {
+                let uint8_builder = builder.as_any_mut().downcast_mut::<UInt8Builder>().unwrap();
+                uint8_builder.append_value(*value);
+            }
+            PrimitiveValue::Char(value) => {
+                todo!()
+            }
+            PrimitiveValue::Float32(value) => {
+                let float32_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<Float32Builder>()
+                    .unwrap();
+                float32_builder.append_value(*value);
+            }
+            PrimitiveValue::Float64(value) => {
+                let float64_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<Float64Builder>()
+                    .unwrap();
+                float64_builder.append_value(*value);
+            }
+            PrimitiveValue::Int8(value) => {
+                let int8_builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
+                int8_builder.append_value(*value);
+            }
+            PrimitiveValue::UInt8(value) => {
+                let uint8_builder = builder.as_any_mut().downcast_mut::<UInt8Builder>().unwrap();
+                uint8_builder.append_value(*value);
+            }
+            PrimitiveValue::Int16(value) => {
+                let int16_builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
+                int16_builder.append_value(*value);
+            }
+            PrimitiveValue::UInt16(value) => {
+                let uint16_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<UInt16Builder>()
+                    .unwrap();
+                uint16_builder.append_value(*value);
+            }
+            PrimitiveValue::Int32(value) => {
+                let int32_builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
+                int32_builder.append_value(*value);
+            }
+            PrimitiveValue::UInt32(value) => {
+                let uint32_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<UInt32Builder>()
+                    .unwrap();
+                uint32_builder.append_value(*value);
+            }
+            PrimitiveValue::UInt64(value) => {
+                let uint64_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<UInt64Builder>()
+                    .unwrap();
+                uint64_builder.append_value(*value);
+            }
+            PrimitiveValue::Int64(value) => {
+                let int64_builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
+                int64_builder.append_value(*value);
+            }
+            PrimitiveValue::String(value) => {
+                let string_builder = builder
+                    .as_any_mut()
+                    .downcast_mut::<StringBuilder>()
+                    .unwrap();
+                string_builder.append_value(value);
+            }
+        }
     }
 }
 

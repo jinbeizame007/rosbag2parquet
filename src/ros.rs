@@ -274,7 +274,9 @@ pub mod test_helpers {
                 ),
                 Field::new(
                     "frame_id".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(frame_id.to_string()))),
+                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
+                        frame_id.to_string(),
+                    ))),
                 ),
             ],
         }
@@ -309,7 +311,9 @@ pub mod test_helpers {
             name: "String".to_string(),
             value: vec![Field::new(
                 "data".to_string(),
-                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(data.to_string()))),
+                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
+                    data.to_string(),
+                ))),
             )],
         }
     }
