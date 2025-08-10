@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
 use crate::ros::{
-    BaseType, BaseValue, Field, FieldDefinition, FieldType, FieldValue, Message,
-    MessageDefinition, Primitive, PrimitiveValue,
+    BaseType, BaseValue, Field, FieldDefinition, FieldType, FieldValue, Message, MessageDefinition,
+    Primitive, PrimitiveValue,
 };
 
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -295,8 +295,8 @@ impl<'a> CdrDeserializer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use byteorder::{BigEndian, ByteOrder};
     use crate::ros::test_helpers::*;
+    use byteorder::{BigEndian, ByteOrder};
 
     #[test]
     fn test_cdr_deserializer_vector3d() {

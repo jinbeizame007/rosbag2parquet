@@ -1,6 +1,7 @@
 pub mod cdr;
 pub mod ros;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use arrow::array::{
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
     StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, Fields, Schema};
 use arrow::record_batch::RecordBatch;
 use camino::Utf8Path;
 use mcap::MessageStream;
@@ -106,6 +107,66 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     }
 
     Ok(parsed_messages)
+}
+
+pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBatch>> {
+    let mcap_file = read_mcap(path)?;
+
+    // First, collect all schema data
+    let mut type_registry = HashMap::new();
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            let type_name = extract_message_type(&schema.name).to_string();
+            if !type_registry.contains_key(&type_name) {
+                type_registry.insert(type_name, schema.data.clone());
+            }
+        }
+    }
+
+    // Build message definition table from collected schemas
+    let mut msg_definition_table = HashMap::new();
+    for (type_name, schema_data) in &type_registry {
+        let schema_text = std::str::from_utf8(schema_data)?;
+        let sections = parse_schema_sections(type_name, schema_text);
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+    }
+
+    // Process messages
+    let mut parsed_messages = Vec::new();
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+
+    let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            let type_name = extract_message_type(&schema.name).to_string();
+            let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
+            parsed_messages.push(parsed_message);
+        }
+    }
+
+    let converter = MessageDefinitionToArrowSchemaConverter::new(&msg_definition_table);
+    let schemas = converter.convert_all();
+
+    let mut record_batches = Vec::new();
+    for ros_messages in parsed_messages.iter() {
+        let name = ros_messages.name.clone();
+        let ros_messages_list = vec![ros_messages.clone()];
+        let record_batch_builder = RecordBatchBuilder::new(&schemas, &ros_messages_list);
+        let record_batch = record_batch_builder.build(&name);
+        record_batches.push(record_batch);
+    }
+
+    Ok(record_batches)
 }
 
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
@@ -364,18 +425,17 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
 }
 
 pub struct RecordBatchBuilder<'a> {
-    schema: Arc<Schema>,
+    schemas: &'a HashMap<&'a str, Arc<Schema>>,
     messages: &'a Vec<Message>,
 }
 
 impl<'a> RecordBatchBuilder<'a> {
-    pub fn new(schema: Arc<Schema>, messages: &'a Vec<Message>) -> Self {
-        Self { schema, messages }
+    pub fn new(schemas: &'a HashMap<&'a str, Arc<Schema>>, messages: &'a Vec<Message>) -> Self {
+        Self { schemas, messages }
     }
 
-    pub fn build(&self) -> RecordBatch {
-        let mut builders = self
-            .schema
+    pub fn build(&self, name: &str) -> RecordBatch {
+        let mut builders = self.schemas[name]
             .fields()
             .iter()
             .map(|field| -> Box<dyn ArrayBuilder> {
@@ -392,6 +452,7 @@ impl<'a> RecordBatchBuilder<'a> {
                     DataType::Float32 => Box::new(Float32Builder::new()),
                     DataType::Float64 => Box::new(Float64Builder::new()),
                     DataType::Utf8 => Box::new(StringBuilder::new()),
+                    DataType::Struct(fields) => self.build_struct_builder(fields),
                     _ => unreachable!(),
                 }
             })
@@ -409,8 +470,33 @@ impl<'a> RecordBatchBuilder<'a> {
             .map(|builder| builder.finish())
             .collect::<Vec<_>>();
 
-        let record_batch = RecordBatch::try_new(self.schema.clone(), arrays).unwrap();
+        let record_batch = RecordBatch::try_new(self.schemas[name].clone(), arrays).unwrap();
         record_batch
+    }
+
+    pub fn build_struct_builder(&self, fields: &Fields) -> Box<dyn ArrayBuilder> {
+        let field_builders = fields
+            .iter()
+            .map(|field| -> Box<dyn ArrayBuilder> {
+                match field.data_type() {
+                    DataType::Boolean => Box::new(BooleanBuilder::new()),
+                    DataType::UInt8 => Box::new(UInt8Builder::new()),
+                    DataType::UInt16 => Box::new(UInt16Builder::new()),
+                    DataType::UInt32 => Box::new(UInt32Builder::new()),
+                    DataType::UInt64 => Box::new(UInt64Builder::new()),
+                    DataType::Int8 => Box::new(Int8Builder::new()),
+                    DataType::Int16 => Box::new(Int16Builder::new()),
+                    DataType::Int32 => Box::new(Int32Builder::new()),
+                    DataType::Int64 => Box::new(Int64Builder::new()),
+                    DataType::Float32 => Box::new(Float32Builder::new()),
+                    DataType::Float64 => Box::new(Float64Builder::new()),
+                    DataType::Utf8 => Box::new(StringBuilder::new()),
+                    DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
+                    _ => unreachable!(),
+                }
+            })
+            .collect();
+        Box::new(StructBuilder::new(fields.clone(), field_builders))
     }
 
     pub fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
@@ -1120,5 +1206,11 @@ mod tests {
 
         // assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values[0], expected_ros_msg_values[0]);
+    }
+
+    #[test]
+    fn test_record_batch_builder() {
+        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let record_batch = rosbag2record_batches(test_path).unwrap();
     }
 }
