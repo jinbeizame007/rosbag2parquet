@@ -138,7 +138,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBa
     }
 
     // Process messages
-    let mut parsed_messages = Vec::new();
+    let mut parsed_messages = HashMap::new();
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
@@ -150,7 +150,15 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBa
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
             let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
-            parsed_messages.push(parsed_message);
+
+            if !parsed_messages.contains_key(&type_name) {
+                parsed_messages.insert(type_name, vec![parsed_message]);
+            } else {
+                parsed_messages
+                    .get_mut(&type_name)
+                    .unwrap()
+                    .push(parsed_message);
+            }
         }
     }
 
@@ -158,11 +166,9 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBa
     let schemas = converter.convert_all();
 
     let mut record_batches = Vec::new();
-    for ros_messages in parsed_messages.iter() {
-        let name = ros_messages.name.clone();
-        let ros_messages_list = vec![ros_messages.clone()];
-        let record_batch_builder = RecordBatchBuilder::new(&schemas, &ros_messages_list);
-        let record_batch = record_batch_builder.build(&name);
+    for (name, ros_messages) in parsed_messages.iter() {
+        let record_batch_builder = RecordBatchBuilder::new(&schemas, ros_messages);
+        let record_batch = record_batch_builder.build(name);
         record_batches.push(record_batch);
     }
 
@@ -1211,6 +1217,6 @@ mod tests {
     #[test]
     fn test_record_batch_builder() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        let record_batch = rosbag2record_batches(test_path).unwrap();
+        let record_batches = rosbag2record_batches(test_path).unwrap();
     }
 }
