@@ -15,6 +15,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Fields, Schema};
 use arrow::record_batch::RecordBatch;
+use arrow_array::{Float64Array, StringArray, StructArray};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -1222,6 +1223,77 @@ mod tests {
     fn test_record_batch_builder() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(test_path).unwrap();
+
+        let twist_batch = record_batches.get("Twist").unwrap();
+        let linear_array = twist_batch
+            .column_by_name("linear")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        let expected_linear_x_array = Arc::new(Float64Array::from(vec![1.2]));
+        assert_eq!(
+            *linear_array.column_by_name("x").unwrap().as_ref(),
+            *expected_linear_x_array.as_ref()
+        );
+        let expected_linear_y_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *linear_array.column_by_name("y").unwrap().as_ref(),
+            *expected_linear_y_array.as_ref()
+        );
+        let expected_linear_z_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *linear_array.column_by_name("z").unwrap().as_ref(),
+            *expected_linear_z_array.as_ref()
+        );
+
+        let angular_array = twist_batch
+            .column_by_name("angular")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        let expected_angular_x_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *angular_array.column_by_name("x").unwrap().as_ref(),
+            *expected_angular_x_array.as_ref()
+        );
+        let expected_angular_y_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *angular_array.column_by_name("y").unwrap().as_ref(),
+            *expected_angular_y_array.as_ref()
+        );
+        let expected_angular_z_array = Arc::new(Float64Array::from(vec![-0.6]));
+        assert_eq!(
+            *angular_array.column_by_name("z").unwrap().as_ref(),
+            *expected_angular_z_array.as_ref()
+        );
+
+        let vector3_batch = record_batches.get("Vector3").unwrap();
+        let expected_x_array = Arc::new(Float64Array::from(vec![1.1]));
+        assert_eq!(
+            *vector3_batch.column_by_name("x").unwrap().as_ref(),
+            *expected_x_array.as_ref()
+        );
+        let expected_y_array = Arc::new(Float64Array::from(vec![2.2]));
+        assert_eq!(
+            *vector3_batch.column_by_name("y").unwrap().as_ref(),
+            *expected_y_array.as_ref()
+        );
+        let expected_z_array = Arc::new(Float64Array::from(vec![3.3]));
+        assert_eq!(
+            *vector3_batch.column_by_name("z").unwrap().as_ref(),
+            *expected_z_array.as_ref()
+        );
+
+        let string_batch = record_batches.get("String").unwrap();
+        let expected_string_array = Arc::new(StringArray::from(vec!["Hello, World!"]));
+        assert_eq!(
+            *string_batch.column_by_name("data").unwrap().as_ref(),
+            *expected_string_array.as_ref()
+        );
 
         for (name, record_batch) in record_batches {
             let file = File::create(format!("{}.parquet", name)).unwrap();
