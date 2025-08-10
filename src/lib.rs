@@ -150,24 +150,20 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<Stri
             let type_name = extract_message_type(&schema.name).to_string();
             let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
 
-            if !parsed_messages.contains_key(&type_name) {
-                parsed_messages.insert(type_name, vec![parsed_message]);
-            } else {
-                parsed_messages
-                    .get_mut(&type_name)
-                    .unwrap()
-                    .push(parsed_message);
-            }
+            parsed_messages
+                .entry(type_name)
+                .or_insert_with(Vec::new)
+                .push(parsed_message);
         }
     }
 
     let converter = MessageDefinitionToArrowSchemaConverter::new(&msg_definition_table);
-    let schemas = converter.convert_all();
+    let schemas = converter.convert_all()?;
 
     let mut record_batches = HashMap::new();
     for (name, ros_messages) in parsed_messages.iter() {
         let record_batch_builder = RecordBatchBuilder::new(&schemas, ros_messages);
-        let record_batch = record_batch_builder.build(name);
+        let record_batch = record_batch_builder.build(name)?;
         record_batches.insert(name.clone(), record_batch);
     }
 
@@ -338,22 +334,24 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
         }
     }
 
-    pub fn convert(&self, name: &str) -> Arc<Schema> {
-        let message_definition = self.message_definition_table.get(name).unwrap();
+    pub fn convert(&self, name: &str) -> Result<Arc<Schema>> {
+        let message_definition = self.message_definition_table
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", name))?;
         let fields: Vec<Field> = message_definition
             .fields
             .iter()
             .map(|field| self.ros_field_to_arrow_field(field))
             .collect();
-        Arc::new(Schema::new(fields))
+        Ok(Arc::new(Schema::new(fields)))
     }
 
-    pub fn convert_all(&self) -> HashMap<&'a str, Arc<Schema>> {
+    pub fn convert_all(&self) -> Result<HashMap<&'a str, Arc<Schema>>> {
         let mut schemas = HashMap::new();
         for (name, _message_definition) in self.message_definition_table.iter() {
-            schemas.insert(*name, self.convert(name).clone());
+            schemas.insert(*name, self.convert(name)?);
         }
-        schemas
+        Ok(schemas)
     }
 
     fn ros_field_to_arrow_field(&self, field: &FieldDefinition<'a>) -> Field {
@@ -429,32 +427,37 @@ impl<'a> RecordBatchBuilder<'a> {
         Self { schemas, messages }
     }
 
-    pub fn build(&self, name: &str) -> RecordBatch {
-        let mut builders = self.schemas[name]
+    fn create_array_builder(&self, data_type: &DataType) -> Box<dyn ArrayBuilder> {
+        match data_type {
+            DataType::Boolean => Box::new(BooleanBuilder::new()),
+            DataType::UInt8 => Box::new(UInt8Builder::new()),
+            DataType::UInt16 => Box::new(UInt16Builder::new()),
+            DataType::UInt32 => Box::new(UInt32Builder::new()),
+            DataType::UInt64 => Box::new(UInt64Builder::new()),
+            DataType::Int8 => Box::new(Int8Builder::new()),
+            DataType::Int16 => Box::new(Int16Builder::new()),
+            DataType::Int32 => Box::new(Int32Builder::new()),
+            DataType::Int64 => Box::new(Int64Builder::new()),
+            DataType::Float32 => Box::new(Float32Builder::new()),
+            DataType::Float64 => Box::new(Float64Builder::new()),
+            DataType::Utf8 => Box::new(StringBuilder::new()),
+            DataType::Struct(fields) => self.build_struct_builder(fields),
+            DataType::FixedSizeList(field, length) => {
+                self.build_fixed_size_list_builder(field, *length)
+            }
+            DataType::List(field) => self.build_list_builder(field),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn build(&self, name: &str) -> Result<RecordBatch> {
+        let schema = self.schemas
+            .get(name)
+            .ok_or_else(|| anyhow::anyhow!("Schema not found for type: {}", name))?;
+        let mut builders = schema
             .fields()
             .iter()
-            .map(|field| -> Box<dyn ArrayBuilder> {
-                match field.data_type() {
-                    DataType::Boolean => Box::new(BooleanBuilder::new()),
-                    DataType::UInt8 => Box::new(UInt8Builder::new()),
-                    DataType::UInt16 => Box::new(UInt16Builder::new()),
-                    DataType::UInt32 => Box::new(UInt32Builder::new()),
-                    DataType::UInt64 => Box::new(UInt64Builder::new()),
-                    DataType::Int8 => Box::new(Int8Builder::new()),
-                    DataType::Int16 => Box::new(Int16Builder::new()),
-                    DataType::Int32 => Box::new(Int32Builder::new()),
-                    DataType::Int64 => Box::new(Int64Builder::new()),
-                    DataType::Float32 => Box::new(Float32Builder::new()),
-                    DataType::Float64 => Box::new(Float64Builder::new()),
-                    DataType::Utf8 => Box::new(StringBuilder::new()),
-                    DataType::Struct(fields) => self.build_struct_builder(fields),
-                    DataType::FixedSizeList(field, length) => {
-                        self.build_fixed_size_list_builder(field, *length)
-                    }
-                    DataType::List(field) => self.build_list_builder(field),
-                    _ => unreachable!(),
-                }
-            })
+            .map(|field| self.create_array_builder(field.data_type()))
             .collect::<Vec<_>>();
 
         for message in self.messages.iter() {
@@ -469,8 +472,8 @@ impl<'a> RecordBatchBuilder<'a> {
             .map(|builder| builder.finish())
             .collect::<Vec<_>>();
 
-        let record_batch = RecordBatch::try_new(self.schemas[name].clone(), arrays).unwrap();
-        record_batch
+        RecordBatch::try_new(schema.clone(), arrays)
+            .context("Failed to create RecordBatch")
     }
 
     pub fn build_fixed_size_list_builder(
@@ -478,7 +481,7 @@ impl<'a> RecordBatchBuilder<'a> {
         field: &Field,
         length: i32,
     ) -> Box<dyn ArrayBuilder> {
-        let fixed_size_list_builder: Box<dyn ArrayBuilder> = match field.data_type() {
+        match field.data_type() {
             DataType::Boolean => Box::new(FixedSizeListBuilder::new(BooleanBuilder::new(), length)),
             DataType::UInt8 => Box::new(FixedSizeListBuilder::new(UInt8Builder::new(), length)),
             DataType::UInt16 => Box::new(FixedSizeListBuilder::new(UInt16Builder::new(), length)),
@@ -493,12 +496,11 @@ impl<'a> RecordBatchBuilder<'a> {
             DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
             DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
             _ => unreachable!(),
-        };
-        fixed_size_list_builder
+        }
     }
 
     pub fn build_list_builder(&self, field: &Field) -> Box<dyn ArrayBuilder> {
-        let list_builder: Box<dyn ArrayBuilder> = match field.data_type() {
+        match field.data_type() {
             DataType::Boolean => Box::new(ListBuilder::new(BooleanBuilder::new())),
             DataType::UInt8 => Box::new(ListBuilder::new(UInt8Builder::new())),
             DataType::UInt16 => Box::new(ListBuilder::new(UInt16Builder::new())),
@@ -513,31 +515,13 @@ impl<'a> RecordBatchBuilder<'a> {
             DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
             DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
             _ => unreachable!(),
-        };
-        list_builder
+        }
     }
 
     pub fn build_struct_builder(&self, fields: &Fields) -> Box<dyn ArrayBuilder> {
         let field_builders = fields
             .iter()
-            .map(|field| -> Box<dyn ArrayBuilder> {
-                match field.data_type() {
-                    DataType::Boolean => Box::new(BooleanBuilder::new()),
-                    DataType::UInt8 => Box::new(UInt8Builder::new()),
-                    DataType::UInt16 => Box::new(UInt16Builder::new()),
-                    DataType::UInt32 => Box::new(UInt32Builder::new()),
-                    DataType::UInt64 => Box::new(UInt64Builder::new()),
-                    DataType::Int8 => Box::new(Int8Builder::new()),
-                    DataType::Int16 => Box::new(Int16Builder::new()),
-                    DataType::Int32 => Box::new(Int32Builder::new()),
-                    DataType::Int64 => Box::new(Int64Builder::new()),
-                    DataType::Float32 => Box::new(Float32Builder::new()),
-                    DataType::Float64 => Box::new(Float64Builder::new()),
-                    DataType::Utf8 => Box::new(StringBuilder::new()),
-                    DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
-                    _ => unreachable!(),
-                }
-            })
+            .map(|field| self.create_array_builder(field.data_type()))
             .collect();
         Box::new(StructBuilder::new(fields.clone(), field_builders))
     }
