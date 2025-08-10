@@ -1,10 +1,8 @@
 pub mod cdr;
 pub mod ros;
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -15,9 +13,6 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Fields, Schema};
 use arrow::record_batch::RecordBatch;
-use arrow_array::{
-    FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray, UInt32Array,
-};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -30,9 +25,6 @@ use nom::{
     sequence::pair,
     IResult, Parser,
 };
-use parquet::arrow::arrow_writer::ArrowWriter;
-use parquet::basic::Compression;
-use parquet::file::properties::{WriterProperties, WriterPropertiesBuilder};
 
 use crate::cdr::CdrDeserializer;
 use crate::ros::{
@@ -40,7 +32,7 @@ use crate::ros::{
 };
 
 pub use cdr::Endianness;
-pub use ros::*;
+pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
 pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     let mmap = read_mcap(path)?;
@@ -358,7 +350,7 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
 
     pub fn convert_all(&self) -> HashMap<&'a str, Arc<Schema>> {
         let mut schemas = HashMap::new();
-        for (name, message_definition) in self.message_definition_table.iter() {
+        for (name, _message_definition) in self.message_definition_table.iter() {
             schemas.insert(*name, self.convert(name).clone());
         }
         schemas
@@ -424,16 +416,6 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
             Primitive::UInt64 => DataType::UInt64,
             Primitive::String => DataType::Utf8,
         }
-    }
-
-    fn ros_complex_type_to_arrow_data_type(&self, name: &str) -> DataType {
-        let message_definition = self.message_definition_table.get(name).unwrap();
-        let fields = message_definition
-            .fields
-            .iter()
-            .map(|field| self.ros_field_to_arrow_field(field))
-            .collect();
-        DataType::Struct(fields)
     }
 }
 
@@ -595,10 +577,10 @@ impl<'a> RecordBatchBuilder<'a> {
                     }
                     boolean_array_builder.append(true);
                 }
-                PrimitiveValue::Byte(value) => {
+                PrimitiveValue::Byte(_value) => {
                     todo!()
                 }
-                PrimitiveValue::Char(value) => {
+                PrimitiveValue::Char(_value) => {
                     todo!()
                 }
                 PrimitiveValue::Float32(_) => {
@@ -719,7 +701,7 @@ impl<'a> RecordBatchBuilder<'a> {
                     string_array_builder.append(true);
                 }
             },
-            BaseValue::Complex(complex) => {
+            BaseValue::Complex(_complex) => {
                 let struct_array_builder = builder
                     .as_any_mut()
                     .downcast_mut::<ListBuilder<StructBuilder>>()
@@ -760,10 +742,10 @@ impl<'a> RecordBatchBuilder<'a> {
                     }
                     boolean_array_builder.append(true);
                 }
-                PrimitiveValue::Byte(value) => {
+                PrimitiveValue::Byte(_value) => {
                     todo!()
                 }
-                PrimitiveValue::Char(value) => {
+                PrimitiveValue::Char(_value) => {
                     todo!()
                 }
                 PrimitiveValue::Float32(_) => {
@@ -936,7 +918,7 @@ impl<'a> RecordBatchBuilder<'a> {
                 let uint8_builder = builder.as_any_mut().downcast_mut::<UInt8Builder>().unwrap();
                 uint8_builder.append_value(*value);
             }
-            PrimitiveValue::Char(value) => {
+            PrimitiveValue::Char(_value) => {
                 todo!()
             }
             PrimitiveValue::Float32(value) => {
@@ -1007,7 +989,15 @@ impl<'a> RecordBatchBuilder<'a> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{Float64Type, GenericStringType};
+    use arrow::datatypes::Float64Type;
+    use arrow_array::{
+        FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray,
+        UInt32Array,
+    };
+    use parquet::arrow::arrow_writer::ArrowWriter;
+    use parquet::basic::Compression;
+    use parquet::file::properties::WriterProperties;
+    use std::fs::File;
 
     use super::*;
     use crate::ros::test_helpers::*;
@@ -1650,12 +1640,6 @@ mod tests {
             *expected_name_array.as_ref()
         );
 
-        let position_array = joint_state_batch
-            .column_by_name("position")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .unwrap();
         let expected_position_array =
             Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
@@ -1668,12 +1652,6 @@ mod tests {
             *expected_position_array.as_ref()
         );
 
-        let velocity_array = joint_state_batch
-            .column_by_name("velocity")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .unwrap();
         let expected_velocity_array =
             Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
@@ -1686,12 +1664,6 @@ mod tests {
             *expected_velocity_array.as_ref()
         );
 
-        let effort_array = joint_state_batch
-            .column_by_name("effort")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .unwrap();
         let expected_effort_array =
             Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
