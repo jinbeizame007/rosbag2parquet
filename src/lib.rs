@@ -15,7 +15,9 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Fields, Schema};
 use arrow::record_batch::RecordBatch;
-use arrow_array::{Float64Array, StringArray, StructArray};
+use arrow_array::{
+    FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray, UInt32Array,
+};
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
@@ -464,6 +466,10 @@ impl<'a> RecordBatchBuilder<'a> {
                     DataType::Float64 => Box::new(Float64Builder::new()),
                     DataType::Utf8 => Box::new(StringBuilder::new()),
                     DataType::Struct(fields) => self.build_struct_builder(fields),
+                    DataType::FixedSizeList(field, length) => {
+                        self.build_fixed_size_list_builder(field, *length)
+                    }
+                    DataType::List(field) => self.build_list_builder(field),
                     _ => unreachable!(),
                 }
             })
@@ -483,6 +489,50 @@ impl<'a> RecordBatchBuilder<'a> {
 
         let record_batch = RecordBatch::try_new(self.schemas[name].clone(), arrays).unwrap();
         record_batch
+    }
+
+    pub fn build_fixed_size_list_builder(
+        &self,
+        field: &Field,
+        length: i32,
+    ) -> Box<dyn ArrayBuilder> {
+        let fixed_size_list_builder: Box<dyn ArrayBuilder> = match field.data_type() {
+            DataType::Boolean => Box::new(FixedSizeListBuilder::new(BooleanBuilder::new(), length)),
+            DataType::UInt8 => Box::new(FixedSizeListBuilder::new(UInt8Builder::new(), length)),
+            DataType::UInt16 => Box::new(FixedSizeListBuilder::new(UInt16Builder::new(), length)),
+            DataType::UInt32 => Box::new(FixedSizeListBuilder::new(UInt32Builder::new(), length)),
+            DataType::UInt64 => Box::new(FixedSizeListBuilder::new(UInt64Builder::new(), length)),
+            DataType::Int8 => Box::new(FixedSizeListBuilder::new(Int8Builder::new(), length)),
+            DataType::Int16 => Box::new(FixedSizeListBuilder::new(Int16Builder::new(), length)),
+            DataType::Int32 => Box::new(FixedSizeListBuilder::new(Int32Builder::new(), length)),
+            DataType::Int64 => Box::new(FixedSizeListBuilder::new(Int64Builder::new(), length)),
+            DataType::Float32 => Box::new(FixedSizeListBuilder::new(Float32Builder::new(), length)),
+            DataType::Float64 => Box::new(FixedSizeListBuilder::new(Float64Builder::new(), length)),
+            DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
+            DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
+            _ => unreachable!(),
+        };
+        fixed_size_list_builder
+    }
+
+    pub fn build_list_builder(&self, field: &Field) -> Box<dyn ArrayBuilder> {
+        let list_builder: Box<dyn ArrayBuilder> = match field.data_type() {
+            DataType::Boolean => Box::new(ListBuilder::new(BooleanBuilder::new())),
+            DataType::UInt8 => Box::new(ListBuilder::new(UInt8Builder::new())),
+            DataType::UInt16 => Box::new(ListBuilder::new(UInt16Builder::new())),
+            DataType::UInt32 => Box::new(ListBuilder::new(UInt32Builder::new())),
+            DataType::UInt64 => Box::new(ListBuilder::new(UInt64Builder::new())),
+            DataType::Int8 => Box::new(ListBuilder::new(Int8Builder::new())),
+            DataType::Int16 => Box::new(ListBuilder::new(Int16Builder::new())),
+            DataType::Int32 => Box::new(ListBuilder::new(Int32Builder::new())),
+            DataType::Int64 => Box::new(ListBuilder::new(Int64Builder::new())),
+            DataType::Float32 => Box::new(ListBuilder::new(Float32Builder::new())),
+            DataType::Float64 => Box::new(ListBuilder::new(Float64Builder::new())),
+            DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
+            DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
+            _ => unreachable!(),
+        };
+        list_builder
     }
 
     pub fn build_struct_builder(&self, fields: &Fields) -> Box<dyn ArrayBuilder> {
@@ -594,10 +644,34 @@ impl<'a> RecordBatchBuilder<'a> {
                     todo!()
                 }
                 PrimitiveValue::Int32(_) => {
-                    todo!()
+                    let int32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<Int32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Int32(i)) => {
+                                int32_array_builder.values().append_value(*i);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    int32_array_builder.append(true);
                 }
                 PrimitiveValue::UInt32(_) => {
-                    todo!()
+                    let uint32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<FixedSizeListBuilder<UInt32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::UInt32(u)) => {
+                                uint32_array_builder.values().append_value(*u);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    uint32_array_builder.append(true);
                 }
                 PrimitiveValue::Int64(_) => {
                     let int64_array_builder = builder
@@ -684,6 +758,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    boolean_array_builder.append(true);
                 }
                 PrimitiveValue::Byte(value) => {
                     todo!()
@@ -704,6 +779,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    float32_array_builder.append(true);
                 }
                 PrimitiveValue::Float64(_) => {
                     let float64_array_builder = builder
@@ -718,6 +794,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    float64_array_builder.append(true);
                 }
                 PrimitiveValue::Int8(_) => {
                     todo!()
@@ -732,10 +809,34 @@ impl<'a> RecordBatchBuilder<'a> {
                     todo!()
                 }
                 PrimitiveValue::Int32(_) => {
-                    todo!()
+                    let int32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<Int32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::Int32(i)) => {
+                                int32_array_builder.values().append_value(*i);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    int32_array_builder.append(true);
                 }
                 PrimitiveValue::UInt32(_) => {
-                    todo!()
+                    let uint32_array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<ListBuilder<UInt32Builder>>()
+                        .unwrap();
+                    for base_value in value.iter() {
+                        match base_value {
+                            BaseValue::Primitive(PrimitiveValue::UInt32(u)) => {
+                                uint32_array_builder.values().append_value(*u);
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                    uint32_array_builder.append(true);
                 }
                 PrimitiveValue::Int64(_) => {
                     let int64_array_builder = builder
@@ -750,6 +851,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    int64_array_builder.append(true);
                 }
                 PrimitiveValue::UInt64(_) => {
                     let uint64_array_builder = builder
@@ -764,6 +866,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    uint64_array_builder.append(true);
                 }
                 PrimitiveValue::String(_) => {
                     let string_array_builder = builder
@@ -778,6 +881,7 @@ impl<'a> RecordBatchBuilder<'a> {
                             _ => unreachable!(),
                         }
                     }
+                    string_array_builder.append(true);
                 }
             },
             BaseValue::Complex(complex) => {
@@ -786,6 +890,7 @@ impl<'a> RecordBatchBuilder<'a> {
                     .downcast_mut::<StructBuilder>()
                     .unwrap();
                 self.append_complex(struct_builder, complex);
+                struct_builder.append(true);
             }
         }
     }
@@ -902,6 +1007,8 @@ impl<'a> RecordBatchBuilder<'a> {
 
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::{Float64Type, GenericStringType};
+
     use super::*;
     use crate::ros::test_helpers::*;
 
@@ -1293,6 +1400,305 @@ mod tests {
         assert_eq!(
             *string_batch.column_by_name("data").unwrap().as_ref(),
             *expected_string_array.as_ref()
+        );
+
+        for (name, record_batch) in record_batches {
+            let file = File::create(format!("{}.parquet", name)).unwrap();
+            let props = WriterProperties::builder()
+                .set_compression(Compression::SNAPPY)
+                .build();
+            let mut writer =
+                ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
+            writer.write(&record_batch).expect("Writing batch failed");
+            writer.close().unwrap();
+        }
+    }
+
+    #[test]
+    fn test_record_batch_builder_array() {
+        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
+        let record_batches = rosbag2record_batches(test_path).unwrap();
+
+        let imu_batch = record_batches.get("Imu").unwrap();
+
+        let header_array = imu_batch
+            .column_by_name("header")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let stamp_array = header_array
+            .column_by_name("stamp")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        let expected_sec_array = Arc::new(Int32Array::from(vec![0]));
+        assert_eq!(
+            *stamp_array.column_by_name("sec").unwrap().as_ref(),
+            *expected_sec_array.as_ref()
+        );
+        let expected_nanosec_array = Arc::new(UInt32Array::from(vec![0]));
+        assert_eq!(
+            *stamp_array.column_by_name("nanosec").unwrap().as_ref(),
+            *expected_nanosec_array.as_ref()
+        );
+        let expected_frame_id_array = Arc::new(StringArray::from(vec!["imu_link"]));
+        assert_eq!(
+            *header_array.column_by_name("frame_id").unwrap().as_ref(),
+            *expected_frame_id_array.as_ref()
+        );
+
+        let orientation_array = imu_batch
+            .column_by_name("orientation")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let expected_orientation_x_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *orientation_array.column_by_name("x").unwrap().as_ref(),
+            *expected_orientation_x_array.as_ref()
+        );
+        let expected_orientation_y_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *orientation_array.column_by_name("y").unwrap().as_ref(),
+            *expected_orientation_y_array.as_ref()
+        );
+        let expected_orientation_z_array = Arc::new(Float64Array::from(vec![0.0]));
+        assert_eq!(
+            *orientation_array.column_by_name("z").unwrap().as_ref(),
+            *expected_orientation_z_array.as_ref()
+        );
+        let expected_orientation_w_array = Arc::new(Float64Array::from(vec![1.0]));
+        assert_eq!(
+            *orientation_array.column_by_name("w").unwrap().as_ref(),
+            *expected_orientation_w_array.as_ref()
+        );
+
+        let expected_orientation_covariance_array = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.1),
+                    Some(0.2),
+                    Some(0.3),
+                    Some(0.4),
+                    Some(0.5),
+                    Some(0.6),
+                    Some(0.7),
+                    Some(0.8),
+                    Some(0.9),
+                ])],
+                9,
+            ),
+        );
+        assert_eq!(
+            *imu_batch
+                .column_by_name("orientation_covariance")
+                .unwrap()
+                .as_ref(),
+            *expected_orientation_covariance_array.as_ref()
+        );
+
+        let angular_velocity_array = imu_batch
+            .column_by_name("angular_velocity")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let expected_angular_velocity_x_array = Arc::new(Float64Array::from(vec![0.1]));
+        assert_eq!(
+            *angular_velocity_array.column_by_name("x").unwrap().as_ref(),
+            *expected_angular_velocity_x_array.as_ref()
+        );
+        let expected_angular_velocity_y_array = Arc::new(Float64Array::from(vec![0.2]));
+        assert_eq!(
+            *angular_velocity_array.column_by_name("y").unwrap().as_ref(),
+            *expected_angular_velocity_y_array.as_ref()
+        );
+        let expected_angular_velocity_z_array = Arc::new(Float64Array::from(vec![0.3]));
+        assert_eq!(
+            *angular_velocity_array.column_by_name("z").unwrap().as_ref(),
+            *expected_angular_velocity_z_array.as_ref()
+        );
+
+        let expected_angular_velocity_covariance_array = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(0.6),
+                    Some(0.5),
+                    Some(0.4),
+                    Some(0.3),
+                    Some(0.2),
+                    Some(0.1),
+                ])],
+                9,
+            ),
+        );
+        assert_eq!(
+            *imu_batch
+                .column_by_name("angular_velocity_covariance")
+                .unwrap()
+                .as_ref(),
+            *expected_angular_velocity_covariance_array.as_ref()
+        );
+
+        let linear_acceleration_array = imu_batch
+            .column_by_name("linear_acceleration")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let expected_linear_acceleration_x_array = Arc::new(Float64Array::from(vec![1.0]));
+        assert_eq!(
+            *linear_acceleration_array
+                .column_by_name("x")
+                .unwrap()
+                .as_ref(),
+            *expected_linear_acceleration_x_array.as_ref()
+        );
+        let expected_linear_acceleration_y_array = Arc::new(Float64Array::from(vec![2.0]));
+        assert_eq!(
+            *linear_acceleration_array
+                .column_by_name("y")
+                .unwrap()
+                .as_ref(),
+            *expected_linear_acceleration_y_array.as_ref()
+        );
+        let expected_linear_acceleration_z_array = Arc::new(Float64Array::from(vec![3.0]));
+        assert_eq!(
+            *linear_acceleration_array
+                .column_by_name("z")
+                .unwrap()
+                .as_ref(),
+            *expected_linear_acceleration_z_array.as_ref()
+        );
+
+        let expected_linear_acceleration_covariance_array = Arc::new(
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.1),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.1),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.1),
+                ])],
+                9,
+            ),
+        );
+        assert_eq!(
+            *imu_batch
+                .column_by_name("linear_acceleration_covariance")
+                .unwrap()
+                .as_ref(),
+            *expected_linear_acceleration_covariance_array.as_ref()
+        );
+
+        // ********** JointState **********
+
+        let joint_state_batch = record_batches.get("JointState").unwrap();
+        let header_array = joint_state_batch
+            .column_by_name("header")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let stamp_array = header_array
+            .column_by_name("stamp")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        let expected_sec_array = Arc::new(Int32Array::from(vec![0]));
+        assert_eq!(
+            *stamp_array.column_by_name("sec").unwrap().as_ref(),
+            *expected_sec_array.as_ref()
+        );
+        let expected_nanosec_array = Arc::new(UInt32Array::from(vec![0]));
+        assert_eq!(
+            *stamp_array.column_by_name("nanosec").unwrap().as_ref(),
+            *expected_nanosec_array.as_ref()
+        );
+        let expected_frame_id_array = Arc::new(StringArray::from(vec![""]));
+        assert_eq!(
+            *header_array.column_by_name("frame_id").unwrap().as_ref(),
+            *expected_frame_id_array.as_ref()
+        );
+
+        let name_array = joint_state_batch
+            .column_by_name("name")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let expected_name_array = Arc::new(StringArray::from(vec!["joint1", "joint2", "joint3"]));
+        assert_eq!(
+            *name_array
+                .value(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap(),
+            *expected_name_array.as_ref()
+        );
+
+        let position_array = joint_state_batch
+            .column_by_name("position")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let expected_position_array =
+            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+                Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
+            ]));
+        assert_eq!(
+            *joint_state_batch
+                .column_by_name("position")
+                .unwrap()
+                .as_ref(),
+            *expected_position_array.as_ref()
+        );
+
+        let velocity_array = joint_state_batch
+            .column_by_name("velocity")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let expected_velocity_array =
+            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+                Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
+            ]));
+        assert_eq!(
+            *joint_state_batch
+                .column_by_name("velocity")
+                .unwrap()
+                .as_ref(),
+            *expected_velocity_array.as_ref()
+        );
+
+        let effort_array = joint_state_batch
+            .column_by_name("effort")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let expected_effort_array =
+            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+                Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
+            ]));
+        assert_eq!(
+            *joint_state_batch.column_by_name("effort").unwrap().as_ref(),
+            *expected_effort_array.as_ref()
         );
 
         for (name, record_batch) in record_batches {
