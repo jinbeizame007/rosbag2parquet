@@ -4,6 +4,7 @@ pub mod ros;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs;
+use std::fs::File;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -26,6 +27,9 @@ use nom::{
     sequence::pair,
     IResult, Parser,
 };
+use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::basic::Compression;
+use parquet::file::properties::{WriterProperties, WriterPropertiesBuilder};
 
 use crate::cdr::CdrDeserializer;
 use crate::ros::{
@@ -109,7 +113,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     Ok(parsed_messages)
 }
 
-pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBatch>> {
+pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
 
     // First, collect all schema data
@@ -165,11 +169,11 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<RecordBa
     let converter = MessageDefinitionToArrowSchemaConverter::new(&msg_definition_table);
     let schemas = converter.convert_all();
 
-    let mut record_batches = Vec::new();
+    let mut record_batches = HashMap::new();
     for (name, ros_messages) in parsed_messages.iter() {
         let record_batch_builder = RecordBatchBuilder::new(&schemas, ros_messages);
         let record_batch = record_batch_builder.build(name);
-        record_batches.push(record_batch);
+        record_batches.insert(name.clone(), record_batch);
     }
 
     Ok(record_batches)
@@ -1218,5 +1222,16 @@ mod tests {
     fn test_record_batch_builder() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(test_path).unwrap();
+
+        for (name, record_batch) in record_batches {
+            let file = File::create(format!("{}.parquet", name)).unwrap();
+            let props = WriterProperties::builder()
+                .set_compression(Compression::SNAPPY)
+                .build();
+            let mut writer =
+                ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
+            writer.write(&record_batch).expect("Writing batch failed");
+            writer.close().unwrap();
+        }
     }
 }
