@@ -978,13 +978,83 @@ mod tests {
         FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray,
         UInt32Array,
     };
-    use parquet::arrow::arrow_writer::ArrowWriter;
-    use parquet::basic::Compression;
-    use parquet::file::properties::WriterProperties;
-    use std::fs::File;
 
     use super::*;
     use crate::ros::test_helpers::*;
+
+    // Helper function to write record batches to parquet files
+    fn write_record_batches_to_parquet(record_batches: HashMap<String, RecordBatch>) {
+        for (name, record_batch) in record_batches {
+            let file = std::fs::File::create(format!("{}.parquet", name)).unwrap();
+            let props = parquet::file::properties::WriterProperties::builder()
+                .set_compression(parquet::basic::Compression::SNAPPY)
+                .build();
+            let mut writer =
+                parquet::arrow::arrow_writer::ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
+            writer.write(&record_batch).expect("Writing batch failed");
+            writer.close().unwrap();
+        }
+    }
+
+    // Helper function to assert struct field equality
+    fn assert_struct_field_equals<T>(
+        struct_array: &StructArray,
+        field_name: &str,
+        expected: T,
+    ) 
+    where
+        T: arrow_array::Array,
+    {
+        assert_eq!(
+            *struct_array.column_by_name(field_name).unwrap().as_ref(),
+            *Arc::new(expected).as_ref()
+        );
+    }
+
+    // Helper function to assert column equality
+    fn assert_column_equals<T>(
+        batch: &RecordBatch,
+        column_name: &str,
+        expected: T,
+    )
+    where
+        T: arrow_array::Array,
+    {
+        assert_eq!(
+            *batch.column_by_name(column_name).unwrap().as_ref(),
+            *Arc::new(expected).as_ref()
+        );
+    }
+
+    // Helper function to assert FixedSizeListArray equality
+    fn assert_fixed_size_list_equals(
+        batch: &RecordBatch,
+        column_name: &str,
+        expected: FixedSizeListArray,
+    ) {
+        let actual = batch
+            .column_by_name(column_name)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<FixedSizeListArray>()
+            .unwrap();
+        assert_eq!(actual, &expected);
+    }
+
+    // Helper function to assert ListArray equality
+    fn assert_list_equals(
+        batch: &RecordBatch,
+        column_name: &str,
+        expected: ListArray,
+    ) {
+        let actual = batch
+            .column_by_name(column_name)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        assert_eq!(actual, &expected);
+    }
 
     #[test]
     fn test_ros_data_type() {
@@ -1313,21 +1383,9 @@ mod tests {
             .downcast_ref::<StructArray>()
             .unwrap();
 
-        let expected_linear_x_array = Arc::new(Float64Array::from(vec![1.2]));
-        assert_eq!(
-            *linear_array.column_by_name("x").unwrap().as_ref(),
-            *expected_linear_x_array.as_ref()
-        );
-        let expected_linear_y_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *linear_array.column_by_name("y").unwrap().as_ref(),
-            *expected_linear_y_array.as_ref()
-        );
-        let expected_linear_z_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *linear_array.column_by_name("z").unwrap().as_ref(),
-            *expected_linear_z_array.as_ref()
-        );
+        assert_struct_field_equals(linear_array, "x", Float64Array::from(vec![1.2]));
+        assert_struct_field_equals(linear_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(linear_array, "z", Float64Array::from(vec![0.0]));
 
         let angular_array = twist_batch
             .column_by_name("angular")
@@ -1336,56 +1394,19 @@ mod tests {
             .downcast_ref::<StructArray>()
             .unwrap();
 
-        let expected_angular_x_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *angular_array.column_by_name("x").unwrap().as_ref(),
-            *expected_angular_x_array.as_ref()
-        );
-        let expected_angular_y_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *angular_array.column_by_name("y").unwrap().as_ref(),
-            *expected_angular_y_array.as_ref()
-        );
-        let expected_angular_z_array = Arc::new(Float64Array::from(vec![-0.6]));
-        assert_eq!(
-            *angular_array.column_by_name("z").unwrap().as_ref(),
-            *expected_angular_z_array.as_ref()
-        );
+        assert_struct_field_equals(angular_array, "x", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(angular_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(angular_array, "z", Float64Array::from(vec![-0.6]));
 
         let vector3_batch = record_batches.get("Vector3").unwrap();
-        let expected_x_array = Arc::new(Float64Array::from(vec![1.1]));
-        assert_eq!(
-            *vector3_batch.column_by_name("x").unwrap().as_ref(),
-            *expected_x_array.as_ref()
-        );
-        let expected_y_array = Arc::new(Float64Array::from(vec![2.2]));
-        assert_eq!(
-            *vector3_batch.column_by_name("y").unwrap().as_ref(),
-            *expected_y_array.as_ref()
-        );
-        let expected_z_array = Arc::new(Float64Array::from(vec![3.3]));
-        assert_eq!(
-            *vector3_batch.column_by_name("z").unwrap().as_ref(),
-            *expected_z_array.as_ref()
-        );
+        assert_column_equals(vector3_batch, "x", Float64Array::from(vec![1.1]));
+        assert_column_equals(vector3_batch, "y", Float64Array::from(vec![2.2]));
+        assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
 
         let string_batch = record_batches.get("String").unwrap();
-        let expected_string_array = Arc::new(StringArray::from(vec!["Hello, World!"]));
-        assert_eq!(
-            *string_batch.column_by_name("data").unwrap().as_ref(),
-            *expected_string_array.as_ref()
-        );
+        assert_column_equals(string_batch, "data", StringArray::from(vec!["Hello, World!"]));
 
-        for (name, record_batch) in record_batches {
-            let file = File::create(format!("{}.parquet", name)).unwrap();
-            let props = WriterProperties::builder()
-                .set_compression(Compression::SNAPPY)
-                .build();
-            let mut writer =
-                ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
-            writer.write(&record_batch).expect("Writing batch failed");
-            writer.close().unwrap();
-        }
+        write_record_batches_to_parquet(record_batches);
     }
 
     #[test]
@@ -1408,21 +1429,9 @@ mod tests {
             .downcast_ref::<StructArray>()
             .unwrap();
 
-        let expected_sec_array = Arc::new(Int32Array::from(vec![0]));
-        assert_eq!(
-            *stamp_array.column_by_name("sec").unwrap().as_ref(),
-            *expected_sec_array.as_ref()
-        );
-        let expected_nanosec_array = Arc::new(UInt32Array::from(vec![0]));
-        assert_eq!(
-            *stamp_array.column_by_name("nanosec").unwrap().as_ref(),
-            *expected_nanosec_array.as_ref()
-        );
-        let expected_frame_id_array = Arc::new(StringArray::from(vec!["imu_link"]));
-        assert_eq!(
-            *header_array.column_by_name("frame_id").unwrap().as_ref(),
-            *expected_frame_id_array.as_ref()
-        );
+        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
+        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
+        assert_struct_field_equals(header_array, "frame_id", StringArray::from(vec!["imu_link"]));
 
         let orientation_array = imu_batch
             .column_by_name("orientation")
@@ -1430,28 +1439,12 @@ mod tests {
             .as_any()
             .downcast_ref::<StructArray>()
             .unwrap();
-        let expected_orientation_x_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *orientation_array.column_by_name("x").unwrap().as_ref(),
-            *expected_orientation_x_array.as_ref()
-        );
-        let expected_orientation_y_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *orientation_array.column_by_name("y").unwrap().as_ref(),
-            *expected_orientation_y_array.as_ref()
-        );
-        let expected_orientation_z_array = Arc::new(Float64Array::from(vec![0.0]));
-        assert_eq!(
-            *orientation_array.column_by_name("z").unwrap().as_ref(),
-            *expected_orientation_z_array.as_ref()
-        );
-        let expected_orientation_w_array = Arc::new(Float64Array::from(vec![1.0]));
-        assert_eq!(
-            *orientation_array.column_by_name("w").unwrap().as_ref(),
-            *expected_orientation_w_array.as_ref()
-        );
+        assert_struct_field_equals(orientation_array, "x", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "z", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "w", Float64Array::from(vec![1.0]));
 
-        let expected_orientation_covariance_array = Arc::new(
+        let expected_orientation_covariance_array = 
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.1),
@@ -1465,15 +1458,8 @@ mod tests {
                     Some(0.9),
                 ])],
                 9,
-            ),
-        );
-        assert_eq!(
-            *imu_batch
-                .column_by_name("orientation_covariance")
-                .unwrap()
-                .as_ref(),
-            *expected_orientation_covariance_array.as_ref()
-        );
+            );
+        assert_fixed_size_list_equals(imu_batch, "orientation_covariance", expected_orientation_covariance_array);
 
         let angular_velocity_array = imu_batch
             .column_by_name("angular_velocity")
@@ -1481,23 +1467,11 @@ mod tests {
             .as_any()
             .downcast_ref::<StructArray>()
             .unwrap();
-        let expected_angular_velocity_x_array = Arc::new(Float64Array::from(vec![0.1]));
-        assert_eq!(
-            *angular_velocity_array.column_by_name("x").unwrap().as_ref(),
-            *expected_angular_velocity_x_array.as_ref()
-        );
-        let expected_angular_velocity_y_array = Arc::new(Float64Array::from(vec![0.2]));
-        assert_eq!(
-            *angular_velocity_array.column_by_name("y").unwrap().as_ref(),
-            *expected_angular_velocity_y_array.as_ref()
-        );
-        let expected_angular_velocity_z_array = Arc::new(Float64Array::from(vec![0.3]));
-        assert_eq!(
-            *angular_velocity_array.column_by_name("z").unwrap().as_ref(),
-            *expected_angular_velocity_z_array.as_ref()
-        );
+        assert_struct_field_equals(angular_velocity_array, "x", Float64Array::from(vec![0.1]));
+        assert_struct_field_equals(angular_velocity_array, "y", Float64Array::from(vec![0.2]));
+        assert_struct_field_equals(angular_velocity_array, "z", Float64Array::from(vec![0.3]));
 
-        let expected_angular_velocity_covariance_array = Arc::new(
+        let expected_angular_velocity_covariance_array = 
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.9),
@@ -1511,15 +1485,8 @@ mod tests {
                     Some(0.1),
                 ])],
                 9,
-            ),
-        );
-        assert_eq!(
-            *imu_batch
-                .column_by_name("angular_velocity_covariance")
-                .unwrap()
-                .as_ref(),
-            *expected_angular_velocity_covariance_array.as_ref()
-        );
+            );
+        assert_fixed_size_list_equals(imu_batch, "angular_velocity_covariance", expected_angular_velocity_covariance_array);
 
         let linear_acceleration_array = imu_batch
             .column_by_name("linear_acceleration")
@@ -1527,32 +1494,11 @@ mod tests {
             .as_any()
             .downcast_ref::<StructArray>()
             .unwrap();
-        let expected_linear_acceleration_x_array = Arc::new(Float64Array::from(vec![1.0]));
-        assert_eq!(
-            *linear_acceleration_array
-                .column_by_name("x")
-                .unwrap()
-                .as_ref(),
-            *expected_linear_acceleration_x_array.as_ref()
-        );
-        let expected_linear_acceleration_y_array = Arc::new(Float64Array::from(vec![2.0]));
-        assert_eq!(
-            *linear_acceleration_array
-                .column_by_name("y")
-                .unwrap()
-                .as_ref(),
-            *expected_linear_acceleration_y_array.as_ref()
-        );
-        let expected_linear_acceleration_z_array = Arc::new(Float64Array::from(vec![3.0]));
-        assert_eq!(
-            *linear_acceleration_array
-                .column_by_name("z")
-                .unwrap()
-                .as_ref(),
-            *expected_linear_acceleration_z_array.as_ref()
-        );
+        assert_struct_field_equals(linear_acceleration_array, "x", Float64Array::from(vec![1.0]));
+        assert_struct_field_equals(linear_acceleration_array, "y", Float64Array::from(vec![2.0]));
+        assert_struct_field_equals(linear_acceleration_array, "z", Float64Array::from(vec![3.0]));
 
-        let expected_linear_acceleration_covariance_array = Arc::new(
+        let expected_linear_acceleration_covariance_array = 
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.1),
@@ -1566,15 +1512,8 @@ mod tests {
                     Some(0.1),
                 ])],
                 9,
-            ),
-        );
-        assert_eq!(
-            *imu_batch
-                .column_by_name("linear_acceleration_covariance")
-                .unwrap()
-                .as_ref(),
-            *expected_linear_acceleration_covariance_array.as_ref()
-        );
+            );
+        assert_fixed_size_list_equals(imu_batch, "linear_acceleration_covariance", expected_linear_acceleration_covariance_array);
 
         // ********** JointState **********
 
@@ -1592,21 +1531,9 @@ mod tests {
             .downcast_ref::<StructArray>()
             .unwrap();
 
-        let expected_sec_array = Arc::new(Int32Array::from(vec![0]));
-        assert_eq!(
-            *stamp_array.column_by_name("sec").unwrap().as_ref(),
-            *expected_sec_array.as_ref()
-        );
-        let expected_nanosec_array = Arc::new(UInt32Array::from(vec![0]));
-        assert_eq!(
-            *stamp_array.column_by_name("nanosec").unwrap().as_ref(),
-            *expected_nanosec_array.as_ref()
-        );
-        let expected_frame_id_array = Arc::new(StringArray::from(vec![""]));
-        assert_eq!(
-            *header_array.column_by_name("frame_id").unwrap().as_ref(),
-            *expected_frame_id_array.as_ref()
-        );
+        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
+        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
+        assert_struct_field_equals(header_array, "frame_id", StringArray::from(vec![""]));
 
         let name_array = joint_state_batch
             .column_by_name("name")
@@ -1625,47 +1552,23 @@ mod tests {
         );
 
         let expected_position_array =
-            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
-            ]));
-        assert_eq!(
-            *joint_state_batch
-                .column_by_name("position")
-                .unwrap()
-                .as_ref(),
-            *expected_position_array.as_ref()
-        );
+            ]);
+        assert_list_equals(joint_state_batch, "position", expected_position_array);
 
         let expected_velocity_array =
-            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
-            ]));
-        assert_eq!(
-            *joint_state_batch
-                .column_by_name("velocity")
-                .unwrap()
-                .as_ref(),
-            *expected_velocity_array.as_ref()
-        );
+            ]);
+        assert_list_equals(joint_state_batch, "velocity", expected_velocity_array);
 
         let expected_effort_array =
-            Arc::new(ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
                 Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
-            ]));
-        assert_eq!(
-            *joint_state_batch.column_by_name("effort").unwrap().as_ref(),
-            *expected_effort_array.as_ref()
-        );
+            ]);
+        assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        for (name, record_batch) in record_batches {
-            let file = File::create(format!("{}.parquet", name)).unwrap();
-            let props = WriterProperties::builder()
-                .set_compression(Compression::SNAPPY)
-                .build();
-            let mut writer =
-                ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
-            writer.write(&record_batch).expect("Writing batch failed");
-            writer.close().unwrap();
-        }
+        write_record_batches_to_parquet(record_batches);
     }
 }
