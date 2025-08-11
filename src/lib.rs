@@ -673,9 +673,9 @@ mod tests {
         // topic_names.insert("sensor_msgs/msg/Image".to_string());
         // topic_names.insert("visualization_msgs/msg/MarkerArray".to_string());
         // topic_names.insert("nav_msgs/msg/OccupancyGrid".to_string());
-        // topic_names.insert("diagnostic_msgs/msg/DiagnosticArray".to_string());  // To be supported
-        // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());  // To be supported
-        // topic_names.insert("tf2_msgs/msg/TFMessage".to_string()); // To be supported
+        // topic_names.insert("diagnostic_msgs/msg/DiagnosticArray".to_string());
+        // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());
+        // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
         let test_path = "rosbags/large2/large2.mcap";
         let record_batches =
