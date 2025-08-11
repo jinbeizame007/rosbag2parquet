@@ -79,7 +79,12 @@ impl<'a> ArrowSchemaBuilder<'a> {
         match base_type {
             BaseType::Primitive(primitive) => self.ros_primitive_to_arrow_data_type(primitive),
             BaseType::Complex(name) => {
-                let message_definition = self.message_definition_table.get(name.as_str()).unwrap();
+                let message_definition = self.message_definition_table.get(name.as_str())
+                    .unwrap_or_else(|| panic!(
+                        "Message definition not found for complex type: '{}'. Available types: {:?}",
+                        name,
+                        self.message_definition_table.keys().collect::<Vec<_>>()
+                    ));
                 let fields = message_definition
                     .fields
                     .iter()

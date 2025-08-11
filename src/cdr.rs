@@ -62,7 +62,14 @@ impl<'a> CdrDeserializer<'a> {
             value: Vec::new(),
         };
 
-        for field in self.msg_definition_table.get(name).unwrap().fields.iter() {
+        let msg_definition = self.msg_definition_table.get(name)
+            .unwrap_or_else(|| panic!(
+                "Message definition not found for type: '{}'. Available types: {:?}",
+                name,
+                self.msg_definition_table.keys().collect::<Vec<_>>()
+            ));
+
+        for field in msg_definition.fields.iter() {
             let field_value = self.parse_field(field, data);
             value.value.push(field_value);
         }
@@ -273,11 +280,21 @@ impl<'a> CdrDeserializer<'a> {
             None => bytes,
             Some((_null_char, contents)) => contents,
         };
-        std::str::from_utf8(bytes_without_null).unwrap().to_string()
+        std::str::from_utf8(bytes_without_null)
+            .unwrap_or_else(|err| panic!(
+                "Failed to decode UTF-8 string from CDR data at position {}. Error: {}",
+                self.position - byte_length as usize, err
+            ))
+            .to_string()
     }
 
     fn parse_complex(&mut self, name: &str, data: &[u8]) -> Message {
-        let msg_definition = self.msg_definition_table.get(name).unwrap();
+        let msg_definition = self.msg_definition_table.get(name)
+            .unwrap_or_else(|| panic!(
+                "Message definition not found for complex type: '{}'. Available types: {:?}",
+                name,
+                self.msg_definition_table.keys().collect::<Vec<_>>()
+            ));
         let mut ros_msg_value = Message {
             name: name.to_string(),
             value: Vec::new(),

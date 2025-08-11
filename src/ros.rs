@@ -231,13 +231,28 @@ pub fn parse_msg_definition_from_schema_section<'a>(
             let data_type = line
                 .split_whitespace()
                 .next()
-                .unwrap()
+                .unwrap_or_else(|| panic!(
+                    "Could not extract data type from line: '{}' in section: '{}'",
+                    line, schema_section.type_name
+                ))
                 .rsplit("/")
                 .next()
-                .unwrap();
-            let name = line.split_whitespace().nth(1).unwrap();
+                .unwrap_or_else(|| panic!(
+                    "Could not extract type name from data type: '{}' in section: '{}'",
+                    line, schema_section.type_name
+                ));
+            let name = line.split_whitespace().nth(1)
+                .unwrap_or_else(|| panic!(
+                    "Could not extract field name from line: '{}' in section: '{}'",
+                    line, schema_section.type_name
+                ));
 
-            let data_type = ros_data_type(data_type).unwrap().1;
+            let data_type = ros_data_type(data_type)
+                .unwrap_or_else(|err| panic!(
+                    "Failed to parse data type '{}' in section '{}': {}",
+                    data_type, schema_section.type_name, err
+                ))
+                .1;
             let field = FieldDefinition::new(data_type, name);
             fields.push(field);
         }
