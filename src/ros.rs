@@ -544,3 +544,212 @@ pub mod test_helpers {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ros::test_helpers::*;
+
+    #[test]
+    fn test_ros_data_type() {
+        let input = "float64";
+        let (rest, data_type) = ros_data_type(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(
+            data_type,
+            FieldType::Base(BaseType::Primitive(Primitive::Float64))
+        );
+
+        let input = "sensor_msgs/msg/Temperature";
+        let (rest, data_type) = ros_data_type(input).unwrap();
+        assert_eq!(rest, "");
+        assert_eq!(
+            data_type,
+            FieldType::Base(BaseType::Complex("sensor_msgs/msg/Temperature".to_string(),))
+        );
+    }
+
+    #[test]
+    fn test_parse_schema_sections_single_section() {
+        let schema_name = "geometry_msgs/msg/Vector3";
+        let schema_text = include_str!("../testdata/schema/vector3d.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].type_name, schema_name);
+
+        // ファイル全体の内容（コメント含む）を期待値とする
+        assert_eq!(sections[0].content, schema_text.trim());
+    }
+
+    #[test]
+    fn test_parse_schema_sections_multiple_sections() {
+        let schema_name = "sensor_msgs/msg/JointState";
+        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+
+        let sections = parse_schema_sections(schema_name, schema_text);
+
+        assert_eq!(sections.len(), 3);
+        assert_eq!(sections[0].type_name, schema_name);
+
+        // 最初のセクションの内容（コメント含む）を期待値とする
+        let expected_content = concat!(
+            "# This is a message that holds data to describe the state of a set of torque controlled joints.\n",
+            "#\n",
+            "# The state of each joint (revolute or prismatic) is defined by:\n",
+            "#  * the position of the joint (rad or m),\n",
+            "#  * the velocity of the joint (rad/s or m/s) and\n",
+            "#  * the effort that is applied in the joint (Nm or N).\n",
+            "#\n",
+            "# Each joint is uniquely identified by its name\n",
+            "# The header specifies the time at which the joint states were recorded. All the joint states\n",
+            "# in one message have to be recorded at the same time.\n",
+            "#\n",
+            "# This message consists of a multiple arrays, one for each part of the joint state.\n",
+            "# The goal is to make each of the fields optional. When e.g. your joints have no\n",
+            "# effort associated with them, you can leave the effort array empty.\n",
+            "#\n",
+            "# All arrays in this message should have the same size, or be empty.\n",
+            "# This is the only way to uniquely associate the joint name with the correct\n",
+            "# states.\n",
+            "\n",
+            "std_msgs/Header header\n",
+            "\n",
+            "string[] name\n",
+            "float64[] position\n",
+            "float64[] velocity\n",
+            "float64[] effort"
+        );
+        assert_eq!(sections[0].content, expected_content);
+
+        let expected_type_name = "std_msgs/Header";
+        let expected_content = concat!(
+            "# Standard metadata for higher-level stamped data types.\n",
+            "# This is generally used to communicate timestamped data\n",
+            "# in a particular coordinate frame.\n",
+            "\n",
+            "# Two-integer timestamp that is expressed as seconds and nanoseconds.\n",
+            "builtin_interfaces/Time stamp\n",
+            "\n",
+            "# Transform frame with which this data is associated.\n",
+            "string frame_id"
+        );
+        assert_eq!(sections[1].type_name, expected_type_name);
+        assert_eq!(sections[1].content, expected_content);
+
+        let expected_type_name = "builtin_interfaces/Time";
+        let expected_content = concat!(
+            "# This message communicates ROS Time defined here:\n",
+            "# https://design.ros2.org/articles/clock_and_time.html\n",
+            "\n",
+            "# The seconds component, valid over all int32 values.\n",
+            "int32 sec\n",
+            "\n",
+            "# The nanoseconds component, valid in the range [0, 10e9).\n",
+            "uint32 nanosec"
+        );
+        assert_eq!(sections[2].type_name, expected_type_name);
+        assert_eq!(sections[2].content, expected_content);
+    }
+
+    #[test]
+    fn test_parse_msg_definition_from_schema_section_single_section() {
+        let schema_name = "geometry_msgs/msg/Vector3";
+        let schema_text = include_str!("../testdata/schema/vector3d.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        let mut msg_definition_table = HashMap::new();
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+
+        assert_eq!(msg_definition_table.len(), 1);
+        assert_eq!(
+            msg_definition_table.get("Vector3"),
+            Some(&create_vector3_definition())
+        );
+    }
+
+    #[test]
+    fn test_parse_msg_definition_from_schema_section_multiple_sections() {
+        let schema_name = "geometry_msgs/msg/TwistStamped";
+        let schema_text = include_str!("../testdata/schema/twist_stamped.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        let mut msg_definition_table = HashMap::new();
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+
+        let mut expected_msg_definition_table = HashMap::new();
+
+        let time_msg_definition = create_time_definition();
+        expected_msg_definition_table.insert("Time", time_msg_definition.clone());
+
+        let header_msg_definition = create_header_definition();
+        expected_msg_definition_table.insert("Header", header_msg_definition.clone());
+
+        let vector3d_msg_definition = create_vector3_definition();
+        expected_msg_definition_table.insert("Vector3", vector3d_msg_definition.clone());
+
+        let twist_msg_definition = create_twist_definition();
+        expected_msg_definition_table.insert("Twist", twist_msg_definition.clone());
+
+        let twist_stamped_msg_definition = create_twist_stamped_definition();
+        expected_msg_definition_table.insert("TwistStamped", twist_stamped_msg_definition.clone());
+
+        assert_eq!(
+            msg_definition_table.len(),
+            expected_msg_definition_table.len()
+        );
+        assert_eq!(
+            msg_definition_table
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>(),
+            expected_msg_definition_table
+                .keys()
+                .cloned()
+                .collect::<std::collections::HashSet<_>>()
+        );
+        assert_eq!(
+            msg_definition_table.get("Time"),
+            expected_msg_definition_table.get("Time")
+        );
+        assert_eq!(
+            msg_definition_table.get("Header"),
+            expected_msg_definition_table.get("Header")
+        );
+        assert_eq!(
+            msg_definition_table.get("Vector3"),
+            expected_msg_definition_table.get("Vector3")
+        );
+        assert_eq!(
+            msg_definition_table.get("Twist"),
+            expected_msg_definition_table.get("Twist")
+        );
+        assert_eq!(
+            msg_definition_table.get("TwistStamped"),
+            expected_msg_definition_table.get("TwistStamped")
+        );
+    }
+
+    #[test]
+    fn test_parse_msg_definition_from_schema_section_joint_state() {
+        let schema_name = "sensor_msgs/msg/JointState";
+        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+        let sections = parse_schema_sections(schema_name, schema_text);
+        let mut msg_definition_table = HashMap::new();
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+
+        let mut expected_msg_definition_table = HashMap::new();
+
+        let time_msg_definition = create_time_definition();
+        expected_msg_definition_table.insert("Time", time_msg_definition.clone());
+
+        let header_msg_definition = create_header_definition();
+        expected_msg_definition_table.insert("Header", header_msg_definition.clone());
+
+        let joint_state_msg_definition = create_joint_state_definition();
+        expected_msg_definition_table.insert("JointState", joint_state_msg_definition.clone());
+
+        assert_eq!(
+            msg_definition_table.len(),
+            expected_msg_definition_table.len()
+        );
+        assert_eq!(msg_definition_table, expected_msg_definition_table);
+    }
+}
