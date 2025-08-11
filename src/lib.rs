@@ -419,6 +419,63 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
     }
 }
 
+// Macro to generate type-specific append_sequence methods
+macro_rules! impl_append_sequence_typed {
+    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident),* $(,)?) => {
+        $(
+            paste::paste! {
+                fn [<append_sequence_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+                    let list_builder = self.downcast_list_builder::<$builder_type>(builder);
+
+                    // Extract and append values in optimized batch
+                    for value in values.$iter_method() {
+                        list_builder.values().append_value(*value);
+                    }
+                    list_builder.append(true);
+                }
+            }
+        )*
+    };
+}
+
+// Macro to generate type-specific append_array methods
+macro_rules! impl_append_array_typed {
+    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident => $list_type:ident),* $(,)?) => {
+        $(
+            paste::paste! {
+                fn [<append_array_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+                    let array_builder = builder
+                        .as_any_mut()
+                        .downcast_mut::<$list_type<$builder_type>>()
+                        .unwrap();
+
+                    // Extract and append values in optimized batch
+                    for value in values.$iter_method() {
+                        array_builder.values().append_value(*value);
+                    }
+                    array_builder.append(true);
+                }
+            }
+        )*
+    };
+}
+
+// Macro to generate type-specific append_primitive methods
+macro_rules! impl_append_primitive_typed {
+    ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
+        $(
+            paste::paste! {
+                fn [<append_primitive_ $short_name>](&self, builder: &mut dyn ArrayBuilder, value: $value_type) {
+                    let typed_builder = builder.as_any_mut()
+                        .downcast_mut::<$builder_type>()
+                        .unwrap();
+                    typed_builder.append_value(value);
+                }
+            }
+        )*
+    };
+}
+
 pub struct RecordBatchBuilder<'a> {
     schemas: &'a HashMap<&'a str, Arc<Schema>>,
     messages: &'a Vec<Message>,
@@ -427,6 +484,75 @@ pub struct RecordBatchBuilder<'a> {
 impl<'a> RecordBatchBuilder<'a> {
     pub fn new(schemas: &'a HashMap<&'a str, Arc<Schema>>, messages: &'a Vec<Message>) -> Self {
         Self { schemas, messages }
+    }
+
+    // Generate type-specific sequence append methods
+    impl_append_sequence_typed! {
+        bool => BooleanBuilder => bool => iter_bool,
+        f32 => Float32Builder => f32 => iter_f32,
+        f64 => Float64Builder => f64 => iter_f64,
+        i8 => Int8Builder => i8 => iter_i8,
+        u8 => UInt8Builder => u8 => iter_u8,
+        i16 => Int16Builder => i16 => iter_i16,
+        u16 => UInt16Builder => u16 => iter_u16,
+        i32 => Int32Builder => i32 => iter_i32,
+        u32 => UInt32Builder => u32 => iter_u32,
+        i64 => Int64Builder => i64 => iter_i64,
+        u64 => UInt64Builder => u64 => iter_u64,
+    }
+
+    // Generate type-specific array append methods
+    impl_append_array_typed! {
+        bool => BooleanBuilder => bool => iter_bool => FixedSizeListBuilder,
+        f32 => Float32Builder => f32 => iter_f32 => FixedSizeListBuilder,
+        f64 => Float64Builder => f64 => iter_f64 => FixedSizeListBuilder,
+        i8 => Int8Builder => i8 => iter_i8 => ListBuilder,
+        u8 => UInt8Builder => u8 => iter_u8 => ListBuilder,
+        i16 => Int16Builder => i16 => iter_i16 => ListBuilder,
+        u16 => UInt16Builder => u16 => iter_u16 => ListBuilder,
+        i32 => Int32Builder => i32 => iter_i32 => FixedSizeListBuilder,
+        u32 => UInt32Builder => u32 => iter_u32 => FixedSizeListBuilder,
+        i64 => Int64Builder => i64 => iter_i64 => FixedSizeListBuilder,
+        u64 => UInt64Builder => u64 => iter_u64 => FixedSizeListBuilder,
+    }
+
+    // Special methods for String (needs reference handling)
+    fn append_array_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+        let array_builder = builder
+            .as_any_mut()
+            .downcast_mut::<ListBuilder<StringBuilder>>()
+            .unwrap();
+
+        for value in values.iter_string() {
+            array_builder.values().append_value(value);
+        }
+        array_builder.append(true);
+    }
+
+    fn append_sequence_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+        let list_builder = self.downcast_list_builder::<StringBuilder>(builder);
+        for v in values.iter_string() {
+            list_builder.values().append_value(v);
+        }
+        list_builder.append(true);
+    }
+
+    // Generate type-specific primitive append methods
+    impl_append_primitive_typed! {
+        bool => BooleanBuilder => bool,
+        byte => UInt8Builder => u8,
+        char => UInt8Builder => u8,
+        f32 => Float32Builder => f32,
+        f64 => Float64Builder => f64,
+        i8 => Int8Builder => i8,
+        u8 => UInt8Builder => u8,
+        i16 => Int16Builder => i16,
+        u16 => UInt16Builder => u16,
+        i32 => Int32Builder => i32,
+        u32 => UInt32Builder => u32,
+        i64 => Int64Builder => i64,
+        u64 => UInt64Builder => u64,
+        string => StringBuilder => &str,
     }
 
     fn create_array_builder(&self, data_type: &DataType) -> Box<dyn ArrayBuilder> {
@@ -548,104 +674,20 @@ impl<'a> RecordBatchBuilder<'a> {
     pub fn append_array(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
         match &value[0] {
             BaseValue::Primitive(primitive) => match primitive {
-                PrimitiveValue::Bool(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<BooleanBuilder>(builder);
-                    for v in value.iter_bool() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::Byte(_value) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Char(_value) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Float32(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<Float32Builder>(builder);
-                    for v in value.iter_f32() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::Float64(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<Float64Builder>(builder);
-                    for v in value.iter_f64() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::Int8(_) => {
-                    let list_builder = self.downcast_list_builder::<Int8Builder>(builder);
-                    for v in value.iter_i8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt8(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int16(_) => {
-                    let list_builder = self.downcast_list_builder::<Int16Builder>(builder);
-                    for v in value.iter_i16() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt16(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt16Builder>(builder);
-                    for v in value.iter_u16() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int32(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<Int32Builder>(builder);
-                    for v in value.iter_i32() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::UInt32(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<UInt32Builder>(builder);
-                    for v in value.iter_u32() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::Int64(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<Int64Builder>(builder);
-                    for v in value.iter_i64() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::UInt64(_) => {
-                    let builder = self.downcast_fixed_size_list_builder::<UInt64Builder>(builder);
-                    for v in value.iter_u64() {
-                        builder.values().append_value(*v);
-                    }
-                    builder.append(true);
-                }
-                PrimitiveValue::String(_) => {
-                    let list_builder = self.downcast_list_builder::<StringBuilder>(builder);
-                    for v in value.iter_string() {
-                        list_builder.values().append_value(v);
-                    }
-                    list_builder.append(true);
-                }
+                PrimitiveValue::Bool(_) => self.append_array_bool(builder, value),
+                PrimitiveValue::Byte(_) => self.append_array_u8(builder, value),
+                PrimitiveValue::Char(_) => self.append_array_u8(builder, value),
+                PrimitiveValue::Float32(_) => self.append_array_f32(builder, value),
+                PrimitiveValue::Float64(_) => self.append_array_f64(builder, value),
+                PrimitiveValue::Int8(_) => self.append_array_i8(builder, value),
+                PrimitiveValue::UInt8(_) => self.append_array_u8(builder, value),
+                PrimitiveValue::Int16(_) => self.append_array_i16(builder, value),
+                PrimitiveValue::UInt16(_) => self.append_array_u16(builder, value),
+                PrimitiveValue::Int32(_) => self.append_array_i32(builder, value),
+                PrimitiveValue::UInt32(_) => self.append_array_u32(builder, value),
+                PrimitiveValue::Int64(_) => self.append_array_i64(builder, value),
+                PrimitiveValue::UInt64(_) => self.append_array_u64(builder, value),
+                PrimitiveValue::String(_) => self.append_array_string(builder, value),
             },
             BaseValue::Complex(_complex) => {
                 let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
@@ -663,120 +705,42 @@ impl<'a> RecordBatchBuilder<'a> {
     }
 
     pub fn append_sequence(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
+        if value.is_empty() {
+            return;
+        }
+
         match &value[0] {
             BaseValue::Primitive(primitive) => match primitive {
-                PrimitiveValue::Bool(_) => {
-                    let list_builder = self.downcast_list_builder::<BooleanBuilder>(builder);
-                    for v in value.iter_bool() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Byte(_value) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Char(_value) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Float32(_) => {
-                    let list_builder = self.downcast_list_builder::<Float32Builder>(builder);
-                    for v in value.iter_f32() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Float64(_) => {
-                    let list_builder = self.downcast_list_builder::<Float64Builder>(builder);
-                    for v in value.iter_f64() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int8(_) => {
-                    let list_builder = self.downcast_list_builder::<Int8Builder>(builder);
-                    for v in value.iter_i8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt8(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
-                    for v in value.iter_u8() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int16(_) => {
-                    let list_builder = self.downcast_list_builder::<Int16Builder>(builder);
-                    for v in value.iter_i16() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt16(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt16Builder>(builder);
-                    for v in value.iter_u16() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int32(_) => {
-                    let list_builder = self.downcast_list_builder::<Int32Builder>(builder);
-                    for v in value.iter_i32() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt32(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt32Builder>(builder);
-                    for v in value.iter_u32() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::Int64(_) => {
-                    let list_builder = self.downcast_list_builder::<Int64Builder>(builder);
-                    for v in value.iter_i64() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::UInt64(_) => {
-                    let list_builder = self.downcast_list_builder::<UInt64Builder>(builder);
-                    for v in value.iter_u64() {
-                        list_builder.values().append_value(*v);
-                    }
-                    list_builder.append(true);
-                }
-                PrimitiveValue::String(_) => {
-                    let list_builder = self.downcast_list_builder::<StringBuilder>(builder);
-                    for v in value.iter_string() {
-                        list_builder.values().append_value(v);
-                    }
-                    list_builder.append(true);
-                }
+                PrimitiveValue::Bool(_) => self.append_sequence_bool(builder, value),
+                PrimitiveValue::Byte(_) => self.append_sequence_u8(builder, value),
+                PrimitiveValue::Char(_) => self.append_sequence_u8(builder, value),
+                PrimitiveValue::Float32(_) => self.append_sequence_f32(builder, value),
+                PrimitiveValue::Float64(_) => self.append_sequence_f64(builder, value),
+                PrimitiveValue::Int8(_) => self.append_sequence_i8(builder, value),
+                PrimitiveValue::UInt8(_) => self.append_sequence_u8(builder, value),
+                PrimitiveValue::Int16(_) => self.append_sequence_i16(builder, value),
+                PrimitiveValue::UInt16(_) => self.append_sequence_u16(builder, value),
+                PrimitiveValue::Int32(_) => self.append_sequence_i32(builder, value),
+                PrimitiveValue::UInt32(_) => self.append_sequence_u32(builder, value),
+                PrimitiveValue::Int64(_) => self.append_sequence_i64(builder, value),
+                PrimitiveValue::UInt64(_) => self.append_sequence_u64(builder, value),
+                PrimitiveValue::String(_) => self.append_sequence_string(builder, value),
             },
-            BaseValue::Complex(_) => {
-                let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
-                for complex_value in value.iter_complex() {
-                    let substruct_builder = list_builder
-                        .values()
-                        .as_any_mut()
-                        .downcast_mut::<StructBuilder>()
-                        .unwrap();
-                    self.append_complex(substruct_builder, complex_value);
-                }
-                list_builder.append(true);
-            }
+            BaseValue::Complex(_) => self.append_sequence_complex_typed(builder, value),
         }
+    }
+
+    fn append_sequence_complex_typed(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+        let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
+        for complex_value in values.iter_complex() {
+            let substruct_builder = list_builder
+                .values()
+                .as_any_mut()
+                .downcast_mut::<StructBuilder>()
+                .unwrap();
+            self.append_complex(substruct_builder, complex_value);
+        }
+        list_builder.append(true);
     }
 
     pub fn append_complex(&self, struct_builder: &mut StructBuilder, message: &Message) {
@@ -809,70 +773,21 @@ impl<'a> RecordBatchBuilder<'a> {
 
     pub fn append_primitive(&self, builder: &mut dyn ArrayBuilder, value: &PrimitiveValue) {
         match value {
-            PrimitiveValue::Bool(value) => {
-                self.downcast_builder::<BooleanBuilder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Byte(value) => {
-                self.downcast_builder::<UInt8Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Char(value) => {
-                self.downcast_builder::<UInt8Builder>(builder)
-                    .append_value(*value as u8);
-            }
-            PrimitiveValue::Float32(value) => {
-                self.downcast_builder::<Float32Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Float64(value) => {
-                self.downcast_builder::<Float64Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Int8(value) => {
-                self.downcast_builder::<Int8Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::UInt8(value) => {
-                self.downcast_builder::<UInt8Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Int16(value) => {
-                self.downcast_builder::<Int16Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::UInt16(value) => {
-                self.downcast_builder::<UInt16Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Int32(value) => {
-                self.downcast_builder::<Int32Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::UInt32(value) => {
-                self.downcast_builder::<UInt32Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::UInt64(value) => {
-                self.downcast_builder::<UInt64Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::Int64(value) => {
-                self.downcast_builder::<Int64Builder>(builder)
-                    .append_value(*value);
-            }
-            PrimitiveValue::String(value) => {
-                self.downcast_builder::<StringBuilder>(builder)
-                    .append_value(value);
-            }
+            PrimitiveValue::Bool(value) => self.append_primitive_bool(builder, *value),
+            PrimitiveValue::Byte(value) => self.append_primitive_byte(builder, *value),
+            PrimitiveValue::Char(value) => self.append_primitive_char(builder, *value as u8),
+            PrimitiveValue::Float32(value) => self.append_primitive_f32(builder, *value),
+            PrimitiveValue::Float64(value) => self.append_primitive_f64(builder, *value),
+            PrimitiveValue::Int8(value) => self.append_primitive_i8(builder, *value),
+            PrimitiveValue::UInt8(value) => self.append_primitive_u8(builder, *value),
+            PrimitiveValue::Int16(value) => self.append_primitive_i16(builder, *value),
+            PrimitiveValue::UInt16(value) => self.append_primitive_u16(builder, *value),
+            PrimitiveValue::Int32(value) => self.append_primitive_i32(builder, *value),
+            PrimitiveValue::UInt32(value) => self.append_primitive_u32(builder, *value),
+            PrimitiveValue::UInt64(value) => self.append_primitive_u64(builder, *value),
+            PrimitiveValue::Int64(value) => self.append_primitive_i64(builder, *value),
+            PrimitiveValue::String(value) => self.append_primitive_string(builder, value),
         }
-    }
-
-    fn downcast_builder<'b, B>(&'b self, builder: &'b mut dyn ArrayBuilder) -> &'b mut B
-    where
-        B: ArrayBuilder,
-    {
-        builder.as_any_mut().downcast_mut::<B>().unwrap()
     }
 
     fn downcast_list_builder<'b, B>(
@@ -885,19 +800,6 @@ impl<'a> RecordBatchBuilder<'a> {
         builder
             .as_any_mut()
             .downcast_mut::<ListBuilder<B>>()
-            .unwrap()
-    }
-
-    fn downcast_fixed_size_list_builder<'b, B>(
-        &'b self,
-        builder: &'b mut dyn ArrayBuilder,
-    ) -> &'b mut FixedSizeListBuilder<B>
-    where
-        B: ArrayBuilder + 'b,
-    {
-        builder
-            .as_any_mut()
-            .downcast_mut::<FixedSizeListBuilder<B>>()
             .unwrap()
     }
 }
