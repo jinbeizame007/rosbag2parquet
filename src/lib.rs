@@ -335,7 +335,8 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
     }
 
     pub fn convert(&self, name: &str) -> Result<Arc<Schema>> {
-        let message_definition = self.message_definition_table
+        let message_definition = self
+            .message_definition_table
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", name))?;
         let fields: Vec<Field> = message_definition
@@ -451,7 +452,8 @@ impl<'a> RecordBatchBuilder<'a> {
     }
 
     pub fn build(&self, name: &str) -> Result<RecordBatch> {
-        let schema = self.schemas
+        let schema = self
+            .schemas
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Schema not found for type: {}", name))?;
         let mut builders = schema
@@ -472,8 +474,7 @@ impl<'a> RecordBatchBuilder<'a> {
             .map(|builder| builder.finish())
             .collect::<Vec<_>>();
 
-        RecordBatch::try_new(schema.clone(), arrays)
-            .context("Failed to create RecordBatch")
+        RecordBatch::try_new(schema.clone(), arrays).context("Failed to create RecordBatch")
     }
 
     pub fn build_fixed_size_list_builder(
@@ -892,82 +893,68 @@ impl<'a> RecordBatchBuilder<'a> {
     pub fn append_primitive(&self, builder: &mut dyn ArrayBuilder, value: &PrimitiveValue) {
         match value {
             PrimitiveValue::Bool(value) => {
-                let boolean_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<BooleanBuilder>()
-                    .unwrap();
-                boolean_builder.append_value(*value);
+                self.downcast_array_builder::<BooleanBuilder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Byte(value) => {
-                let uint8_builder = builder.as_any_mut().downcast_mut::<UInt8Builder>().unwrap();
-                uint8_builder.append_value(*value);
+                self.downcast_array_builder::<UInt8Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Char(_value) => {
                 todo!()
             }
             PrimitiveValue::Float32(value) => {
-                let float32_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<Float32Builder>()
-                    .unwrap();
-                float32_builder.append_value(*value);
+                self.downcast_array_builder::<Float32Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Float64(value) => {
-                let float64_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<Float64Builder>()
-                    .unwrap();
-                float64_builder.append_value(*value);
+                self.downcast_array_builder::<Float64Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Int8(value) => {
-                let int8_builder = builder.as_any_mut().downcast_mut::<Int8Builder>().unwrap();
-                int8_builder.append_value(*value);
+                self.downcast_array_builder::<Int8Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::UInt8(value) => {
-                let uint8_builder = builder.as_any_mut().downcast_mut::<UInt8Builder>().unwrap();
-                uint8_builder.append_value(*value);
+                self.downcast_array_builder::<UInt8Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Int16(value) => {
-                let int16_builder = builder.as_any_mut().downcast_mut::<Int16Builder>().unwrap();
-                int16_builder.append_value(*value);
+                self.downcast_array_builder::<Int16Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::UInt16(value) => {
-                let uint16_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<UInt16Builder>()
-                    .unwrap();
-                uint16_builder.append_value(*value);
+                self.downcast_array_builder::<UInt16Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Int32(value) => {
-                let int32_builder = builder.as_any_mut().downcast_mut::<Int32Builder>().unwrap();
-                int32_builder.append_value(*value);
+                self.downcast_array_builder::<Int32Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::UInt32(value) => {
-                let uint32_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<UInt32Builder>()
-                    .unwrap();
-                uint32_builder.append_value(*value);
+                self.downcast_array_builder::<UInt32Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::UInt64(value) => {
-                let uint64_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<UInt64Builder>()
-                    .unwrap();
-                uint64_builder.append_value(*value);
+                self.downcast_array_builder::<UInt64Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::Int64(value) => {
-                let int64_builder = builder.as_any_mut().downcast_mut::<Int64Builder>().unwrap();
-                int64_builder.append_value(*value);
+                self.downcast_array_builder::<Int64Builder>(builder)
+                    .append_value(*value);
             }
             PrimitiveValue::String(value) => {
-                let string_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<StringBuilder>()
-                    .unwrap();
-                string_builder.append_value(value);
+                self.downcast_array_builder::<StringBuilder>(builder)
+                    .append_value(value);
             }
         }
+    }
+
+    fn downcast_array_builder<'b, B>(&'b self, builder: &'b mut dyn ArrayBuilder) -> &'b mut B
+    where
+        B: ArrayBuilder,
+    {
+        builder.as_any_mut().downcast_mut::<B>().unwrap()
     }
 }
 
@@ -989,19 +976,19 @@ mod tests {
             let props = parquet::file::properties::WriterProperties::builder()
                 .set_compression(parquet::basic::Compression::SNAPPY)
                 .build();
-            let mut writer =
-                parquet::arrow::arrow_writer::ArrowWriter::try_new(file, record_batch.schema(), Some(props)).unwrap();
+            let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
+                file,
+                record_batch.schema(),
+                Some(props),
+            )
+            .unwrap();
             writer.write(&record_batch).expect("Writing batch failed");
             writer.close().unwrap();
         }
     }
 
     // Helper function to assert struct field equality
-    fn assert_struct_field_equals<T>(
-        struct_array: &StructArray,
-        field_name: &str,
-        expected: T,
-    ) 
+    fn assert_struct_field_equals<T>(struct_array: &StructArray, field_name: &str, expected: T)
     where
         T: arrow_array::Array,
     {
@@ -1012,11 +999,7 @@ mod tests {
     }
 
     // Helper function to assert column equality
-    fn assert_column_equals<T>(
-        batch: &RecordBatch,
-        column_name: &str,
-        expected: T,
-    )
+    fn assert_column_equals<T>(batch: &RecordBatch, column_name: &str, expected: T)
     where
         T: arrow_array::Array,
     {
@@ -1042,11 +1025,7 @@ mod tests {
     }
 
     // Helper function to assert ListArray equality
-    fn assert_list_equals(
-        batch: &RecordBatch,
-        column_name: &str,
-        expected: ListArray,
-    ) {
+    fn assert_list_equals(batch: &RecordBatch, column_name: &str, expected: ListArray) {
         let actual = batch
             .column_by_name(column_name)
             .unwrap()
@@ -1404,7 +1383,11 @@ mod tests {
         assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
 
         let string_batch = record_batches.get("String").unwrap();
-        assert_column_equals(string_batch, "data", StringArray::from(vec!["Hello, World!"]));
+        assert_column_equals(
+            string_batch,
+            "data",
+            StringArray::from(vec!["Hello, World!"]),
+        );
 
         write_record_batches_to_parquet(record_batches);
     }
@@ -1431,7 +1414,11 @@ mod tests {
 
         assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
         assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
-        assert_struct_field_equals(header_array, "frame_id", StringArray::from(vec!["imu_link"]));
+        assert_struct_field_equals(
+            header_array,
+            "frame_id",
+            StringArray::from(vec!["imu_link"]),
+        );
 
         let orientation_array = imu_batch
             .column_by_name("orientation")
@@ -1444,7 +1431,7 @@ mod tests {
         assert_struct_field_equals(orientation_array, "z", Float64Array::from(vec![0.0]));
         assert_struct_field_equals(orientation_array, "w", Float64Array::from(vec![1.0]));
 
-        let expected_orientation_covariance_array = 
+        let expected_orientation_covariance_array =
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.1),
@@ -1459,7 +1446,11 @@ mod tests {
                 ])],
                 9,
             );
-        assert_fixed_size_list_equals(imu_batch, "orientation_covariance", expected_orientation_covariance_array);
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "orientation_covariance",
+            expected_orientation_covariance_array,
+        );
 
         let angular_velocity_array = imu_batch
             .column_by_name("angular_velocity")
@@ -1471,7 +1462,7 @@ mod tests {
         assert_struct_field_equals(angular_velocity_array, "y", Float64Array::from(vec![0.2]));
         assert_struct_field_equals(angular_velocity_array, "z", Float64Array::from(vec![0.3]));
 
-        let expected_angular_velocity_covariance_array = 
+        let expected_angular_velocity_covariance_array =
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.9),
@@ -1486,7 +1477,11 @@ mod tests {
                 ])],
                 9,
             );
-        assert_fixed_size_list_equals(imu_batch, "angular_velocity_covariance", expected_angular_velocity_covariance_array);
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "angular_velocity_covariance",
+            expected_angular_velocity_covariance_array,
+        );
 
         let linear_acceleration_array = imu_batch
             .column_by_name("linear_acceleration")
@@ -1494,11 +1489,23 @@ mod tests {
             .as_any()
             .downcast_ref::<StructArray>()
             .unwrap();
-        assert_struct_field_equals(linear_acceleration_array, "x", Float64Array::from(vec![1.0]));
-        assert_struct_field_equals(linear_acceleration_array, "y", Float64Array::from(vec![2.0]));
-        assert_struct_field_equals(linear_acceleration_array, "z", Float64Array::from(vec![3.0]));
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "x",
+            Float64Array::from(vec![1.0]),
+        );
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "y",
+            Float64Array::from(vec![2.0]),
+        );
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "z",
+            Float64Array::from(vec![3.0]),
+        );
 
-        let expected_linear_acceleration_covariance_array = 
+        let expected_linear_acceleration_covariance_array =
             FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
                 vec![Some(vec![
                     Some(0.1),
@@ -1513,7 +1520,11 @@ mod tests {
                 ])],
                 9,
             );
-        assert_fixed_size_list_equals(imu_batch, "linear_acceleration_covariance", expected_linear_acceleration_covariance_array);
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "linear_acceleration_covariance",
+            expected_linear_acceleration_covariance_array,
+        );
 
         // ********** JointState **********
 
@@ -1551,22 +1562,19 @@ mod tests {
             *expected_name_array.as_ref()
         );
 
-        let expected_position_array =
-            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-                Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
-            ]);
+        let expected_position_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
+        ]);
         assert_list_equals(joint_state_batch, "position", expected_position_array);
 
-        let expected_velocity_array =
-            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-                Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
-            ]);
+        let expected_velocity_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
+        ]);
         assert_list_equals(joint_state_batch, "velocity", expected_velocity_array);
 
-        let expected_effort_array =
-            ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-                Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
-            ]);
+        let expected_effort_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
+        ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
         write_record_batches_to_parquet(record_batches);
