@@ -86,6 +86,19 @@ pub enum BaseValue {
     Complex(Message),
 }
 
+macro_rules! impl_iter_primitive {
+    ($($method_name:ident => $rust_type:ty => $variant:ident),* $(,)?) => {
+        $(
+            fn $method_name(&self) -> impl Iterator<Item = &$rust_type> {
+                self.iter().filter_map(|base_value| match base_value {
+                    BaseValue::Primitive(PrimitiveValue::$variant(value)) => Some(value),
+                    _ => unreachable!(),
+                })
+            }
+        )*
+    };
+}
+
 pub trait BaseValueSliceExt {
     fn iter_bool(&self) -> impl Iterator<Item = &bool>;
     fn iter_f32(&self) -> impl Iterator<Item = &f32>;
@@ -103,88 +116,19 @@ pub trait BaseValueSliceExt {
 }
 
 impl BaseValueSliceExt for [BaseValue] {
-    fn iter_bool(&self) -> impl Iterator<Item = &bool> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Bool(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_f32(&self) -> impl Iterator<Item = &f32> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Float32(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_f64(&self) -> impl Iterator<Item = &f64> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Float64(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_i8(&self) -> impl Iterator<Item = &i8> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Int8(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_i16(&self) -> impl Iterator<Item = &i16> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Int16(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_i32(&self) -> impl Iterator<Item = &i32> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Int32(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_i64(&self) -> impl Iterator<Item = &i64> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::Int64(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_u8(&self) -> impl Iterator<Item = &u8> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::UInt8(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_u16(&self) -> impl Iterator<Item = &u16> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::UInt16(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_u32(&self) -> impl Iterator<Item = &u32> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::UInt32(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_u64(&self) -> impl Iterator<Item = &u64> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::UInt64(value)) => Some(value),
-            _ => unreachable!(),
-        })
-    }
-
-    fn iter_string(&self) -> impl Iterator<Item = &String> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Primitive(PrimitiveValue::String(value)) => Some(value),
-            _ => unreachable!(),
-        })
+    impl_iter_primitive! {
+        iter_bool => bool => Bool,
+        iter_f32 => f32 => Float32,
+        iter_f64 => f64 => Float64,
+        iter_i8 => i8 => Int8,
+        iter_i16 => i16 => Int16,
+        iter_i32 => i32 => Int32,
+        iter_i64 => i64 => Int64,
+        iter_u8 => u8 => UInt8,
+        iter_u16 => u16 => UInt16,
+        iter_u32 => u32 => UInt32,
+        iter_u64 => u64 => UInt64,
+        iter_string => String => String,
     }
 
     fn iter_complex(&self) -> impl Iterator<Item = &Message> {
