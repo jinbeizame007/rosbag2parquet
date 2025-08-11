@@ -224,7 +224,7 @@ pub fn parse_msg_definition_from_schema_section<'a>(
         let mut fields = Vec::new();
         for line in schema_section.content.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("#") {
+            if trimmed.is_empty() || trimmed.starts_with("#") || is_constant_line(trimmed) {
                 continue;
             }
 
@@ -245,6 +245,10 @@ pub fn parse_msg_definition_from_schema_section<'a>(
         let msg_definition = MessageDefinition::new(short_name, fields);
         msg_definition_table.insert(short_name, msg_definition);
     }
+}
+
+fn is_constant_line(line: &str) -> bool {
+    line.contains("=") && !line.contains("[")
 }
 
 pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {

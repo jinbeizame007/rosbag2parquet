@@ -260,7 +260,7 @@ impl<'a> RecordBatchBuilder<'a> {
             DataType::Float32 => Box::new(Float32Builder::new()),
             DataType::Float64 => Box::new(Float64Builder::new()),
             DataType::Utf8 => Box::new(StringBuilder::new()),
-            DataType::Struct(fields) => self.build_struct_builder(fields),
+            DataType::Struct(fields) => Box::new(self.build_struct_builder(fields)),
             DataType::FixedSizeList(field, length) => {
                 self.build_fixed_size_list_builder(field, *length)
             }
@@ -313,7 +313,10 @@ impl<'a> RecordBatchBuilder<'a> {
             DataType::Float32 => Box::new(FixedSizeListBuilder::new(Float32Builder::new(), length)),
             DataType::Float64 => Box::new(FixedSizeListBuilder::new(Float64Builder::new(), length)),
             DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
-            DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
+            DataType::Struct(sub_fields) => {
+                let struct_builder = self.build_struct_builder(sub_fields);
+                Box::new(FixedSizeListBuilder::new(struct_builder, length))
+            }
             _ => unreachable!(),
         }
     }
@@ -332,17 +335,20 @@ impl<'a> RecordBatchBuilder<'a> {
             DataType::Float32 => Box::new(ListBuilder::new(Float32Builder::new())),
             DataType::Float64 => Box::new(ListBuilder::new(Float64Builder::new())),
             DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
-            DataType::Struct(sub_fields) => self.build_struct_builder(sub_fields),
+            DataType::Struct(sub_fields) => {
+                let struct_builder = self.build_struct_builder(sub_fields);
+                Box::new(ListBuilder::new(struct_builder))
+            }
             _ => unreachable!(),
         }
     }
 
-    pub fn build_struct_builder(&self, fields: &Fields) -> Box<dyn ArrayBuilder> {
+    pub fn build_struct_builder(&self, fields: &Fields) -> StructBuilder {
         let field_builders = fields
             .iter()
             .map(|field| self.create_array_builder(field.data_type()))
             .collect();
-        Box::new(StructBuilder::new(fields.clone(), field_builders))
+        StructBuilder::new(fields.clone(), field_builders)
     }
 
     pub fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
@@ -380,7 +386,7 @@ impl<'a> RecordBatchBuilder<'a> {
                 PrimitiveValue::UInt64(_) => self.append_array_u64(builder, value),
                 PrimitiveValue::String(_) => self.append_array_string(builder, value),
             },
-            BaseValue::Complex(_complex) => {
+            BaseValue::Complex(_) => {
                 let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
                 for complex_value in value.iter_complex() {
                     let substruct_builder = list_builder
@@ -481,14 +487,14 @@ impl<'a> RecordBatchBuilder<'a> {
             match &field.value {
                 FieldValue::Base(base_value) => match base_value {
                     BaseValue::Primitive(primitive) => {
-                        self.append_primitive(field_builder, &primitive);
+                        self.append_primitive(field_builder, primitive);
                     }
                     BaseValue::Complex(complex) => {
                         let substruct_builder = field_builder
                             .as_any_mut()
                             .downcast_mut::<StructBuilder>()
                             .unwrap();
-                        self.append_complex(substruct_builder, &complex);
+                        self.append_complex(substruct_builder, complex);
                     }
                 },
                 FieldValue::Array(array) => {
