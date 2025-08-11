@@ -549,19 +549,11 @@ impl<'a> RecordBatchBuilder<'a> {
         match &value[0] {
             BaseValue::Primitive(primitive) => match primitive {
                 PrimitiveValue::Bool(_) => {
-                    let boolean_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<BooleanBuilder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::Bool(b)) => {
-                                boolean_array_builder.values().append_value(*b);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<BooleanBuilder>(builder);
+                    for v in value.iter_bool() {
+                        builder.values().append_value(*v);
                     }
-                    boolean_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::Byte(_value) => {
                     todo!()
@@ -570,34 +562,18 @@ impl<'a> RecordBatchBuilder<'a> {
                     todo!()
                 }
                 PrimitiveValue::Float32(_) => {
-                    let float32_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<Float32Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::Float32(f)) => {
-                                float32_array_builder.values().append_value(*f);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<Float32Builder>(builder);
+                    for v in value.iter_f32() {
+                        builder.values().append_value(*v);
                     }
-                    float32_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::Float64(_) => {
-                    let float64_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<Float64Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::Float64(f)) => {
-                                float64_array_builder.values().append_value(*f);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<Float64Builder>(builder);
+                    for v in value.iter_f64() {
+                        builder.values().append_value(*v);
                     }
-                    float64_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::Int8(_) => {
                     todo!()
@@ -612,100 +588,52 @@ impl<'a> RecordBatchBuilder<'a> {
                     todo!()
                 }
                 PrimitiveValue::Int32(_) => {
-                    let int32_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<Int32Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::Int32(i)) => {
-                                int32_array_builder.values().append_value(*i);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<Int32Builder>(builder);
+                    for v in value.iter_i32() {
+                        builder.values().append_value(*v);
                     }
-                    int32_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::UInt32(_) => {
-                    let uint32_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<UInt32Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::UInt32(u)) => {
-                                uint32_array_builder.values().append_value(*u);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<UInt32Builder>(builder);
+                    for v in value.iter_u32() {
+                        builder.values().append_value(*v);
                     }
-                    uint32_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::Int64(_) => {
-                    let int64_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<Int64Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::Int64(i)) => {
-                                int64_array_builder.values().append_value(*i);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<Int64Builder>(builder);
+                    for v in value.iter_i64() {
+                        builder.values().append_value(*v);
                     }
-                    int64_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::UInt64(_) => {
-                    let uint64_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<UInt64Builder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::UInt64(u)) => {
-                                uint64_array_builder.values().append_value(*u);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let builder = self.downcast_fixed_size_list_builder::<UInt64Builder>(builder);
+                    for v in value.iter_u64() {
+                        builder.values().append_value(*v);
                     }
-                    uint64_array_builder.append(true);
+                    builder.append(true);
                 }
                 PrimitiveValue::String(_) => {
-                    let string_array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<ListBuilder<StringBuilder>>()
-                        .unwrap();
-                    for base_value in value.iter() {
-                        match base_value {
-                            BaseValue::Primitive(PrimitiveValue::String(s)) => {
-                                string_array_builder.values().append_value(s);
-                            }
-                            _ => unreachable!(),
-                        }
+                    let list_builder = self.downcast_list_builder::<StringBuilder>(builder);
+                    for v in value.iter_string() {
+                        list_builder.values().append_value(v);
                     }
-                    string_array_builder.append(true);
+                    list_builder.append(true);
                 }
             },
             BaseValue::Complex(_complex) => {
-                let struct_array_builder = builder
-                    .as_any_mut()
-                    .downcast_mut::<ListBuilder<StructBuilder>>()
-                    .unwrap();
-                for complex_value in value.iter() {
-                    match complex_value {
-                        BaseValue::Complex(complex) => {
-                            let substruct_builder = struct_array_builder
-                                .values()
-                                .as_any_mut()
-                                .downcast_mut::<StructBuilder>()
-                                .unwrap();
-                            self.append_complex(substruct_builder, complex);
-                        }
-                        _ => unreachable!(),
-                    }
+                let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
+                for complex_value in value.iter_complex() {
+                    let substruct_builder = list_builder
+                        .values()
+                        .as_any_mut()
+                        .downcast_mut::<StructBuilder>()
+                        .unwrap();
+                    self.append_complex(substruct_builder, complex_value);
                 }
-                struct_array_builder.append(true);
+                list_builder.append(true);
             }
         }
     }
@@ -788,7 +716,7 @@ impl<'a> RecordBatchBuilder<'a> {
                     list_builder.append(true);
                 }
             },
-            BaseValue::Complex(complex) => {
+            BaseValue::Complex(_) => {
                 let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
                 for complex_value in value.iter_complex() {
                     let substruct_builder = list_builder
@@ -908,6 +836,19 @@ impl<'a> RecordBatchBuilder<'a> {
         builder
             .as_any_mut()
             .downcast_mut::<ListBuilder<B>>()
+            .unwrap()
+    }
+
+    fn downcast_fixed_size_list_builder<'b, B>(
+        &'b self,
+        builder: &'b mut dyn ArrayBuilder,
+    ) -> &'b mut FixedSizeListBuilder<B>
+    where
+        B: ArrayBuilder + 'b,
+    {
+        builder
+            .as_any_mut()
+            .downcast_mut::<FixedSizeListBuilder<B>>()
             .unwrap()
     }
 }
