@@ -316,23 +316,50 @@ pub fn identifier(input: &str) -> IResult<&str, &str> {
 pub mod test_helpers {
     use super::*;
 
-    // MessageDefinition helper functions
+    // Helper builder for creating field definitions
+    pub struct FieldDefBuilder;
+    
+    impl FieldDefBuilder {
+        pub fn primitive(data_type: Primitive, name: &'static str) -> FieldDefinition<'static> {
+            FieldDefinition::new(
+                FieldType::Base(BaseType::Primitive(data_type)),
+                name,
+            )
+        }
+        
+        pub fn complex(type_name: &str, name: &'static str) -> FieldDefinition<'static> {
+            FieldDefinition::new(
+                FieldType::Base(BaseType::Complex(type_name.to_string())),
+                name,
+            )
+        }
+        
+        pub fn sequence(data_type: Primitive, name: &'static str) -> FieldDefinition<'static> {
+            FieldDefinition::new(
+                FieldType::Sequence(BaseType::Primitive(data_type)),
+                name,
+            )
+        }
+        
+        pub fn array(data_type: Primitive, length: u32, name: &'static str) -> FieldDefinition<'static> {
+            FieldDefinition::new(
+                FieldType::Array { 
+                    data_type: BaseType::Primitive(data_type), 
+                    length 
+                },
+                name,
+            )
+        }
+    }
+
+    // MessageDefinition helper functions using the builder
     pub fn create_vector3_definition() -> MessageDefinition<'static> {
         MessageDefinition::new(
             "Vector3",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "x",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "y",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Float64)),
-                    "z",
-                ),
+                FieldDefBuilder::primitive(Primitive::Float64, "x"),
+                FieldDefBuilder::primitive(Primitive::Float64, "y"),
+                FieldDefBuilder::primitive(Primitive::Float64, "z"),
             ],
         )
     }
@@ -341,14 +368,8 @@ pub mod test_helpers {
         MessageDefinition::new(
             "Time",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::Int32)),
-                    "sec",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::UInt32)),
-                    "nanosec",
-                ),
+                FieldDefBuilder::primitive(Primitive::Int32, "sec"),
+                FieldDefBuilder::primitive(Primitive::UInt32, "nanosec"),
             ],
         )
     }
@@ -357,14 +378,8 @@ pub mod test_helpers {
         MessageDefinition::new(
             "Header",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Time".to_string())),
-                    "stamp",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Primitive(Primitive::String)),
-                    "frame_id",
-                ),
+                FieldDefBuilder::complex("Time", "stamp"),
+                FieldDefBuilder::primitive(Primitive::String, "frame_id"),
             ],
         )
     }
@@ -373,14 +388,8 @@ pub mod test_helpers {
         MessageDefinition::new(
             "Twist",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
-                    "linear",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Vector3".to_string())),
-                    "angular",
-                ),
+                FieldDefBuilder::complex("Vector3", "linear"),
+                FieldDefBuilder::complex("Vector3", "angular"),
             ],
         )
     }
@@ -389,14 +398,8 @@ pub mod test_helpers {
         MessageDefinition::new(
             "TwistStamped",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Header".to_string())),
-                    "header",
-                ),
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Twist".to_string())),
-                    "twist",
-                ),
+                FieldDefBuilder::complex("Header", "header"),
+                FieldDefBuilder::complex("Twist", "twist"),
             ],
         )
     }
@@ -405,119 +408,129 @@ pub mod test_helpers {
         MessageDefinition::new(
             "JointState",
             vec![
-                FieldDefinition::new(
-                    FieldType::Base(BaseType::Complex("Header".to_string())),
-                    "header",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::String)),
-                    "name",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "position",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "velocity",
-                ),
-                FieldDefinition::new(
-                    FieldType::Sequence(BaseType::Primitive(Primitive::Float64)),
-                    "effort",
-                ),
+                FieldDefBuilder::complex("Header", "header"),
+                FieldDefBuilder::sequence(Primitive::String, "name"),
+                FieldDefBuilder::sequence(Primitive::Float64, "position"),
+                FieldDefBuilder::sequence(Primitive::Float64, "velocity"),
+                FieldDefBuilder::sequence(Primitive::Float64, "effort"),
             ],
         )
     }
 
-    // Message value creation helper functions
-    pub fn create_vector3_message(x: f64, y: f64, z: f64) -> Message {
-        Message {
-            name: "Vector3".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(x))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(y))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(z))),
-                ),
-            ],
+    // Helper builder for creating messages and field values
+    pub struct MessageBuilder {
+        name: String,
+        fields: Vec<Field>,
+    }
+    
+    impl MessageBuilder {
+        pub fn new(name: &str) -> Self {
+            Self {
+                name: name.to_string(),
+                fields: Vec::new(),
+            }
         }
+        
+        pub fn add_primitive<T>(mut self, field_name: &str, value: T) -> Self 
+        where
+            PrimitiveValue: From<T>,
+        {
+            self.fields.push(Field::new(
+                field_name.to_string(),
+                FieldValue::Base(BaseValue::Primitive(value.into())),
+            ));
+            self
+        }
+        
+        pub fn add_complex(mut self, field_name: &str, message: Message) -> Self {
+            self.fields.push(Field::new(
+                field_name.to_string(),
+                FieldValue::Base(BaseValue::Complex(message)),
+            ));
+            self
+        }
+        
+        pub fn build(self) -> Message {
+            Message {
+                name: self.name,
+                value: self.fields,
+            }
+        }
+    }
+    
+    // Implement From traits for common primitive conversions
+    impl From<f64> for PrimitiveValue {
+        fn from(val: f64) -> Self {
+            PrimitiveValue::Float64(val)
+        }
+    }
+    
+    impl From<f32> for PrimitiveValue {
+        fn from(val: f32) -> Self {
+            PrimitiveValue::Float32(val)
+        }
+    }
+    
+    impl From<i32> for PrimitiveValue {
+        fn from(val: i32) -> Self {
+            PrimitiveValue::Int32(val)
+        }
+    }
+    
+    impl From<u32> for PrimitiveValue {
+        fn from(val: u32) -> Self {
+            PrimitiveValue::UInt32(val)
+        }
+    }
+    
+    impl From<String> for PrimitiveValue {
+        fn from(val: String) -> Self {
+            PrimitiveValue::String(val)
+        }
+    }
+    
+    impl From<&str> for PrimitiveValue {
+        fn from(val: &str) -> Self {
+            PrimitiveValue::String(val.to_string())
+        }
+    }
+
+    // Message value creation helper functions using the builder
+    pub fn create_vector3_message(x: f64, y: f64, z: f64) -> Message {
+        MessageBuilder::new("Vector3")
+            .add_primitive("x", x)
+            .add_primitive("y", y)
+            .add_primitive("z", z)
+            .build()
     }
 
     pub fn create_time_message(sec: i32, nanosec: u32) -> Message {
-        Message {
-            name: "Time".to_string(),
-            value: vec![
-                Field::new(
-                    "sec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Int32(sec))),
-                ),
-                Field::new(
-                    "nanosec".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::UInt32(nanosec))),
-                ),
-            ],
-        }
+        MessageBuilder::new("Time")
+            .add_primitive("sec", sec)
+            .add_primitive("nanosec", nanosec)
+            .build()
     }
 
     pub fn create_header_message(time_msg: Message, frame_id: &str) -> Message {
-        Message {
-            name: "Header".to_string(),
-            value: vec![
-                Field::new(
-                    "stamp".to_string(),
-                    FieldValue::Base(BaseValue::Complex(time_msg)),
-                ),
-                Field::new(
-                    "frame_id".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
-                        frame_id.to_string(),
-                    ))),
-                ),
-            ],
-        }
+        MessageBuilder::new("Header")
+            .add_complex("stamp", time_msg)
+            .add_primitive("frame_id", frame_id)
+            .build()
     }
 
     pub fn create_quaternion_message(x: f64, y: f64, z: f64, w: f64) -> Message {
-        Message {
-            name: "Quaternion".to_string(),
-            value: vec![
-                Field::new(
-                    "x".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(x))),
-                ),
-                Field::new(
-                    "y".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(y))),
-                ),
-                Field::new(
-                    "z".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(z))),
-                ),
-                Field::new(
-                    "w".to_string(),
-                    FieldValue::Base(BaseValue::Primitive(PrimitiveValue::Float64(w))),
-                ),
-            ],
-        }
+        MessageBuilder::new("Quaternion")
+            .add_primitive("x", x)
+            .add_primitive("y", y)
+            .add_primitive("z", z)
+            .add_primitive("w", w)
+            .build()
     }
 
     pub fn create_string_message(data: &str) -> Message {
-        Message {
-            name: "String".to_string(),
-            value: vec![Field::new(
-                "data".to_string(),
-                FieldValue::Base(BaseValue::Primitive(PrimitiveValue::String(
-                    data.to_string(),
-                ))),
-            )],
-        }
+        MessageBuilder::new("String")
+            .add_primitive("data", data)
+            .build()
     }
 
     // FieldValue creation helper functions
