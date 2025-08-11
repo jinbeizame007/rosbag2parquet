@@ -6,7 +6,6 @@ pub mod ros;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use arrow_array::RecordBatch;
@@ -94,70 +93,19 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
 }
 
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<String, RecordBatch>> {
-    let mcap_file = read_mcap(path)?;
-
-    // First, collect all schema data
-    let mut type_registry = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
-
-        if let Some(schema) = &message.channel.schema {
-            let type_name = extract_message_type(&schema.name).to_string();
-            if !type_registry.contains_key(&type_name) {
-                type_registry.insert(type_name, schema.data.clone());
-            }
-        }
-    }
-
-    // Build message definition table from collected schemas
-    let mut msg_definition_table = HashMap::new();
-    for (type_name, schema_data) in &type_registry {
-        let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = ros::parse_schema_sections(type_name, schema_text);
-        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
-    }
-
-    // Process messages
-    let mut parsed_messages = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
-    for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
-
-        if let Some(schema) = &message.channel.schema {
-            let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
-
-            parsed_messages
-                .entry(type_name)
-                .or_insert_with(Vec::new)
-                .push(parsed_message);
-        }
-    }
-
-    let converter = ArrowSchemaBuilder::new(&msg_definition_table);
-    let schemas = converter.build_all()?;
-
-    let mut record_batches = HashMap::new();
-    for (name, ros_messages) in parsed_messages.iter() {
-        let record_batch_builder = RecordBatchBuilder::new(&schemas, ros_messages);
-        let record_batch = record_batch_builder.build(name)?;
-        record_batches.insert(name.clone(), record_batch);
-    }
-
-    Ok(record_batches)
+    rosbag2record_batches_impl(path, None)
 }
 
 pub fn rosbag2record_batches_with_topic_names<P: AsRef<Utf8Path>>(
     path: P,
     topic_names: HashSet<String>,
+) -> Result<HashMap<String, RecordBatch>> {
+    rosbag2record_batches_impl(path, Some(topic_names))
+}
+
+fn rosbag2record_batches_impl<P: AsRef<Utf8Path>>(
+    path: P,
+    topic_filter: Option<HashSet<String>>,
 ) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
 
@@ -171,8 +119,10 @@ pub fn rosbag2record_batches_with_topic_names<P: AsRef<Utf8Path>>(
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            if !topic_names.contains(&schema.name) {
-                continue;
+            if let Some(ref filter) = topic_filter {
+                if !filter.contains(&schema.name) {
+                    continue;
+                }
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
@@ -201,8 +151,10 @@ pub fn rosbag2record_batches_with_topic_names<P: AsRef<Utf8Path>>(
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
-            if !topic_names.contains(&schema.name) {
-                continue;
+            if let Some(ref filter) = topic_filter {
+                if !filter.contains(&schema.name) {
+                    continue;
+                }
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
@@ -235,6 +187,8 @@ fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+    
     use ::arrow::datatypes::Float64Type;
     use arrow_array::{
         FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray,
@@ -677,9 +631,9 @@ mod tests {
         // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
-        let test_path = "rosbags/large2/large2.mcap";
-        let record_batches =
-            rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-        write_record_batches_to_parquet(record_batches, "rosbags/large2");
+        // let test_path = "rosbags/large2/large2.mcap";
+        // let record_batches =
+        //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
+        // write_record_batches_to_parquet(record_batches, "rosbags/large2");
     }
 }
