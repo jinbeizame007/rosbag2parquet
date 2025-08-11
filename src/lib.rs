@@ -556,10 +556,18 @@ impl<'a> RecordBatchBuilder<'a> {
                     builder.append(true);
                 }
                 PrimitiveValue::Byte(_value) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Char(_value) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Float32(_) => {
                     let builder = self.downcast_fixed_size_list_builder::<Float32Builder>(builder);
@@ -576,16 +584,32 @@ impl<'a> RecordBatchBuilder<'a> {
                     builder.append(true);
                 }
                 PrimitiveValue::Int8(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<Int8Builder>(builder);
+                    for v in value.iter_i8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::UInt8(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Int16(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<Int16Builder>(builder);
+                    for v in value.iter_i16() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::UInt16(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt16Builder>(builder);
+                    for v in value.iter_u16() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Int32(_) => {
                     let builder = self.downcast_fixed_size_list_builder::<Int32Builder>(builder);
@@ -649,10 +673,18 @@ impl<'a> RecordBatchBuilder<'a> {
                     list_builder.append(true);
                 }
                 PrimitiveValue::Byte(_value) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Char(_value) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Float32(_) => {
                     let list_builder = self.downcast_list_builder::<Float32Builder>(builder);
@@ -669,16 +701,32 @@ impl<'a> RecordBatchBuilder<'a> {
                     list_builder.append(true);
                 }
                 PrimitiveValue::Int8(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<Int8Builder>(builder);
+                    for v in value.iter_i8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::UInt8(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt8Builder>(builder);
+                    for v in value.iter_u8() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Int16(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<Int16Builder>(builder);
+                    for v in value.iter_i16() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::UInt16(_) => {
-                    todo!()
+                    let list_builder = self.downcast_list_builder::<UInt16Builder>(builder);
+                    for v in value.iter_u16() {
+                        list_builder.values().append_value(*v);
+                    }
+                    list_builder.append(true);
                 }
                 PrimitiveValue::Int32(_) => {
                     let list_builder = self.downcast_list_builder::<Int32Builder>(builder);
@@ -769,8 +817,9 @@ impl<'a> RecordBatchBuilder<'a> {
                 self.downcast_builder::<UInt8Builder>(builder)
                     .append_value(*value);
             }
-            PrimitiveValue::Char(_value) => {
-                todo!()
+            PrimitiveValue::Char(value) => {
+                self.downcast_builder::<UInt8Builder>(builder)
+                    .append_value(*value as u8);
             }
             PrimitiveValue::Float32(value) => {
                 self.downcast_builder::<Float32Builder>(builder)
