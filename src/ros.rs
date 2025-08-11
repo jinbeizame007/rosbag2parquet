@@ -86,6 +86,115 @@ pub enum BaseValue {
     Complex(Message),
 }
 
+pub trait BaseValueSliceExt {
+    fn iter_bool(&self) -> impl Iterator<Item = &bool>;
+    fn iter_f32(&self) -> impl Iterator<Item = &f32>;
+    fn iter_f64(&self) -> impl Iterator<Item = &f64>;
+    fn iter_i8(&self) -> impl Iterator<Item = &i8>;
+    fn iter_i16(&self) -> impl Iterator<Item = &i16>;
+    fn iter_i32(&self) -> impl Iterator<Item = &i32>;
+    fn iter_i64(&self) -> impl Iterator<Item = &i64>;
+    fn iter_u8(&self) -> impl Iterator<Item = &u8>;
+    fn iter_u16(&self) -> impl Iterator<Item = &u16>;
+    fn iter_u32(&self) -> impl Iterator<Item = &u32>;
+    fn iter_u64(&self) -> impl Iterator<Item = &u64>;
+    fn iter_string(&self) -> impl Iterator<Item = &String>;
+    fn iter_complex(&self) -> impl Iterator<Item = &Message>;
+}
+
+impl BaseValueSliceExt for [BaseValue] {
+    fn iter_bool(&self) -> impl Iterator<Item = &bool> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Bool(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_f32(&self) -> impl Iterator<Item = &f32> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Float32(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_f64(&self) -> impl Iterator<Item = &f64> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Float64(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_i8(&self) -> impl Iterator<Item = &i8> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Int8(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_i16(&self) -> impl Iterator<Item = &i16> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Int16(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_i32(&self) -> impl Iterator<Item = &i32> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Int32(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_i64(&self) -> impl Iterator<Item = &i64> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::Int64(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_u8(&self) -> impl Iterator<Item = &u8> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::UInt8(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_u16(&self) -> impl Iterator<Item = &u16> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::UInt16(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_u32(&self) -> impl Iterator<Item = &u32> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::UInt32(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_u64(&self) -> impl Iterator<Item = &u64> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::UInt64(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_string(&self) -> impl Iterator<Item = &String> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Primitive(PrimitiveValue::String(value)) => Some(value),
+            _ => unreachable!(),
+        })
+    }
+
+    fn iter_complex(&self) -> impl Iterator<Item = &Message> {
+        self.iter().filter_map(|base_value| match base_value {
+            BaseValue::Complex(message) => Some(message),
+            _ => unreachable!(),
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum PrimitiveValue {
     Bool(bool),
