@@ -1,5 +1,6 @@
 pub mod arrow;
 pub mod cdr;
+pub mod core;
 pub mod ros;
 
 use std::collections::HashMap;
@@ -11,22 +12,11 @@ use arrow_array::RecordBatch;
 use camino::Utf8Path;
 use mcap::MessageStream;
 use memmap2::Mmap;
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::complete::{alpha1, alphanumeric1},
-    combinator::{map, recognize},
-    multi::many0,
-    sequence::pair,
-    IResult, Parser,
-};
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::RecordBatchBuilder;
 use crate::cdr::CdrDeserializer;
-use crate::ros::{
-    BaseType, FieldDefinition, FieldType, Message, MessageDefinition, Primitive, SchemaSection,
-};
+use crate::ros::{BaseType, FieldType, Message, Primitive};
 
 pub use cdr::Endianness;
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
@@ -81,8 +71,8 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let mut msg_definition_table = HashMap::new();
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = parse_schema_sections(type_name, schema_text);
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        let sections = ros::parse_schema_sections(type_name, schema_text);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
     // Process messages
@@ -129,8 +119,8 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<Stri
     let mut msg_definition_table = HashMap::new();
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = parse_schema_sections(type_name, schema_text);
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        let sections = ros::parse_schema_sections(type_name, schema_text);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
     // Process messages
@@ -170,137 +160,6 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<Stri
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
     let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
     unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
-}
-
-pub fn parse_schema_sections<'a>(
-    schema_name: &'a str,
-    schema_text: &'a str,
-) -> Vec<SchemaSection<'a>> {
-    let mut sections = Vec::new();
-
-    let delimiter =
-        "================================================================================";
-
-    let raw_sections: Vec<&str> = schema_text
-        .split(delimiter)
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect();
-
-    for (index, raw_section) in raw_sections.iter().enumerate() {
-        let (type_name, content) = if index == 0 {
-            (schema_name, *raw_section)
-        } else {
-            let type_name = raw_section.split_whitespace().nth(1).unwrap_or("");
-            let first_newline = raw_section.find('\n').unwrap();
-            let content_without_first_line = &raw_section[first_newline + 1..];
-            (type_name, content_without_first_line)
-        };
-
-        let schema_section = SchemaSection { type_name, content };
-        sections.push(schema_section);
-    }
-
-    sections
-}
-
-pub fn parse_msg_definition_from_schema_section<'a>(
-    schema_sections: &[SchemaSection<'a>],
-    msg_definition_table: &mut HashMap<&'a str, MessageDefinition<'a>>,
-) {
-    for schema_section in schema_sections.iter().rev() {
-        // Use the short name as the key
-        let short_name = extract_message_type(schema_section.type_name);
-
-        if msg_definition_table.contains_key(short_name) {
-            continue;
-        }
-
-        let mut fields = Vec::new();
-        for line in schema_section.content.lines() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with("#") {
-                continue;
-            }
-
-            let data_type = line
-                .split_whitespace()
-                .next()
-                .unwrap()
-                .rsplit("/")
-                .next()
-                .unwrap();
-            let name = line.split_whitespace().nth(1).unwrap();
-
-            let data_type = ros_data_type(data_type).unwrap().1;
-            let field = FieldDefinition::new(data_type, name);
-            fields.push(field);
-        }
-
-        let msg_definition = MessageDefinition::new(short_name, fields);
-        msg_definition_table.insert(short_name, msg_definition);
-    }
-}
-
-pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
-    if input.ends_with("[]") {
-        let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
-        return Ok((rest, FieldType::Sequence(data_type)));
-    }
-
-    if input.ends_with("]") {
-        let data_type_and_length = input
-            .split_at(input.len() - 1)
-            .0
-            .split('[')
-            .collect::<Vec<&str>>();
-        let (rest, data_type) = non_array_ros_data_type(data_type_and_length[0])?;
-        let length = data_type_and_length[1].parse::<u32>().unwrap();
-        return Ok((rest, FieldType::Array { data_type, length }));
-    }
-
-    let (rest, data_type) = non_array_ros_data_type(input)?;
-    Ok((rest, FieldType::Base(data_type)))
-}
-
-fn non_array_ros_data_type(input: &str) -> IResult<&str, BaseType> {
-    if let Ok((rest, prim)) = primitive_type(input) {
-        return Ok((rest, BaseType::Primitive(prim)));
-    }
-
-    // Otherwise, parse as a complex type (package/type format)
-    let mut parser = map(
-        recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
-        |full_type: &str| BaseType::Complex(full_type.to_string()),
-    );
-    parser.parse(input)
-}
-
-fn primitive_type(input: &str) -> IResult<&str, Primitive> {
-    let mut parser = alt((
-        map(tag("bool"), |_| Primitive::Bool),
-        map(tag("byte"), |_| Primitive::Byte),
-        map(tag("char"), |_| Primitive::Char),
-        map(tag("float32"), |_| Primitive::Float32),
-        map(tag("float64"), |_| Primitive::Float64),
-        map(tag("int8"), |_| Primitive::Int8),
-        map(tag("uint8"), |_| Primitive::UInt8),
-        map(tag("int16"), |_| Primitive::Int16),
-        map(tag("uint16"), |_| Primitive::UInt16),
-        map(tag("int32"), |_| Primitive::Int32),
-        map(tag("uint32"), |_| Primitive::UInt32),
-        map(tag("int64"), |_| Primitive::Int64),
-        map(tag("uint64"), |_| Primitive::UInt64),
-        map(tag("string"), |_| Primitive::String),
-    ));
-    parser.parse(input)
-}
-
-/// ROSの識別子（フィールド名、パッケージ名など）を認識する
-/// 仕様: [a-zA-Z]で始まり、英数字とアンダースコアが続く [2]
-fn identifier(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize(pair(alpha1, many0(alt((alphanumeric1, tag("_"))))));
-    parser.parse(input)
 }
 
 #[cfg(test)]
@@ -383,7 +242,7 @@ mod tests {
     #[test]
     fn test_ros_data_type() {
         let input = "float64";
-        let (rest, data_type) = ros_data_type(input).unwrap();
+        let (rest, data_type) = ros::ros_data_type(input).unwrap();
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
@@ -391,7 +250,7 @@ mod tests {
         );
 
         let input = "sensor_msgs/msg/Temperature";
-        let (rest, data_type) = ros_data_type(input).unwrap();
+        let (rest, data_type) = ros::ros_data_type(input).unwrap();
         assert_eq!(rest, "");
         assert_eq!(
             data_type,
@@ -403,7 +262,7 @@ mod tests {
     fn test_parse_schema_sections_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
         let schema_text = include_str!("../testdata/schema/vector3d.txt");
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = ros::parse_schema_sections(schema_name, schema_text);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].type_name, schema_name);
 
@@ -416,7 +275,7 @@ mod tests {
         let schema_name = "sensor_msgs/msg/JointState";
         let schema_text = include_str!("../testdata/schema/joint_state.txt");
 
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = ros::parse_schema_sections(schema_name, schema_text);
 
         assert_eq!(sections.len(), 3);
         assert_eq!(sections[0].type_name, schema_name);
@@ -485,9 +344,9 @@ mod tests {
     fn test_parse_msg_definition_from_schema_section_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
         let schema_text = include_str!("../testdata/schema/vector3d.txt");
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = ros::parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
 
         assert_eq!(msg_definition_table.len(), 1);
         assert_eq!(
@@ -500,9 +359,9 @@ mod tests {
     fn test_parse_msg_definition_from_schema_section_multiple_sections() {
         let schema_name = "geometry_msgs/msg/TwistStamped";
         let schema_text = include_str!("../testdata/schema/twist_stamped.txt");
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = ros::parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
 
         let mut expected_msg_definition_table = HashMap::new();
 
@@ -561,9 +420,9 @@ mod tests {
     fn test_parse_msg_definition_from_schema_section_joint_state() {
         let schema_name = "sensor_msgs/msg/JointState";
         let schema_text = include_str!("../testdata/schema/joint_state.txt");
-        let sections = parse_schema_sections(schema_name, schema_text);
+        let sections = ros::parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
 
         let mut expected_msg_definition_table = HashMap::new();
 
