@@ -158,8 +158,8 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<Stri
         }
     }
 
-    let converter = MessageDefinitionToArrowSchemaConverter::new(&msg_definition_table);
-    let schemas = converter.convert_all()?;
+    let converter = ArrowSchemaBuilder::new(&msg_definition_table);
+    let schemas = converter.build_all()?;
 
     let mut record_batches = HashMap::new();
     for (name, ros_messages) in parsed_messages.iter() {
@@ -324,18 +324,18 @@ fn identifier(input: &str) -> IResult<&str, &str> {
     parser.parse(input)
 }
 
-struct MessageDefinitionToArrowSchemaConverter<'a> {
+struct ArrowSchemaBuilder<'a> {
     message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
 }
 
-impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
+impl<'a> ArrowSchemaBuilder<'a> {
     pub fn new(message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>) -> Self {
         Self {
             message_definition_table,
         }
     }
 
-    pub fn convert(&self, name: &str) -> Result<Arc<Schema>> {
+    pub fn build(&self, name: &str) -> Result<Arc<Schema>> {
         let message_definition = self
             .message_definition_table
             .get(name)
@@ -348,10 +348,10 @@ impl<'a> MessageDefinitionToArrowSchemaConverter<'a> {
         Ok(Arc::new(Schema::new(fields)))
     }
 
-    pub fn convert_all(&self) -> Result<HashMap<&'a str, Arc<Schema>>> {
+    pub fn build_all(&self) -> Result<HashMap<&'a str, Arc<Schema>>> {
         let mut schemas = HashMap::new();
         for (name, _message_definition) in self.message_definition_table.iter() {
-            schemas.insert(*name, self.convert(name)?);
+            schemas.insert(*name, self.build(name)?);
         }
         Ok(schemas)
     }
