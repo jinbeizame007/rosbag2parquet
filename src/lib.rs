@@ -171,9 +171,17 @@ mod tests {
     use crate::ros::test_helpers::*;
 
     // Helper function to write record batches to parquet files
-    fn write_record_batches_to_parquet(record_batches: HashMap<String, RecordBatch>) {
+    fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
+        record_batches: HashMap<String, RecordBatch>,
+        path: P,
+    ) {
+        let path = path.as_ref().join("parquet");
+        if !path.exists() {
+            fs::create_dir_all(&path).unwrap();
+        }
+
         for (name, record_batch) in record_batches {
-            let file = std::fs::File::create(format!("{}.parquet", name)).unwrap();
+            let file = std::fs::File::create(format!("{}/{}.parquet", &path, name)).unwrap();
             let props = parquet::file::properties::WriterProperties::builder()
                 .set_compression(parquet::basic::Compression::SNAPPY)
                 .build();
@@ -387,7 +395,7 @@ mod tests {
             StringArray::from(vec!["Hello, World!"]),
         );
 
-        write_record_batches_to_parquet(record_batches);
+        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs");
     }
 
     #[test]
@@ -575,6 +583,13 @@ mod tests {
         ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        write_record_batches_to_parquet(record_batches);
+        write_record_batches_to_parquet(record_batches, "rosbags/array_msgs");
+    }
+
+    #[test]
+    fn test_record_batch_builder_large() {
+        let test_path = "rosbags/large2/large2.mcap";
+        let record_batches = rosbag2record_batches(test_path).unwrap();
+        write_record_batches_to_parquet(record_batches, "rosbags/large2");
     }
 }
