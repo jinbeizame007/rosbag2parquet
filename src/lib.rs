@@ -188,7 +188,7 @@ fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    
+
     use ::arrow::datatypes::Float64Type;
     use arrow_array::{
         FixedSizeListArray, Float64Array, Int32Array, ListArray, StringArray, StructArray,
@@ -229,16 +229,22 @@ mod tests {
     where
         T: arrow_array::Array,
     {
-        let column = struct_array.column_by_name(field_name)
-            .unwrap_or_else(|| panic!(
-                "Column '{}' not found in struct. Available columns: {:?}", 
+        let column = struct_array.column_by_name(field_name).unwrap_or_else(|| {
+            panic!(
+                "Column '{}' not found in struct. Available columns: {:?}",
                 field_name,
-                struct_array.fields().iter().map(|f| f.name()).collect::<Vec<_>>()
-            ));
+                struct_array
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect::<Vec<_>>()
+            )
+        });
         assert_eq!(
             *column.as_ref(),
             *Arc::new(expected).as_ref(),
-            "Field '{}' values don't match", field_name
+            "Field '{}' values don't match",
+            field_name
         );
     }
 
@@ -247,16 +253,23 @@ mod tests {
     where
         T: arrow_array::Array,
     {
-        let column = batch.column_by_name(column_name)
-            .unwrap_or_else(|| panic!(
-                "Column '{}' not found in batch. Available columns: {:?}", 
+        let column = batch.column_by_name(column_name).unwrap_or_else(|| {
+            panic!(
+                "Column '{}' not found in batch. Available columns: {:?}",
                 column_name,
-                batch.schema().fields().iter().map(|f| f.name()).collect::<Vec<_>>()
-            ));
+                batch
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect::<Vec<_>>()
+            )
+        });
         assert_eq!(
             *column.as_ref(),
             *Arc::new(expected).as_ref(),
-            "Column '{}' values don't match", column_name
+            "Column '{}' values don't match",
+            column_name
         );
     }
 
@@ -266,36 +279,64 @@ mod tests {
         column_name: &str,
         expected: FixedSizeListArray,
     ) {
-        let column = batch.column_by_name(column_name)
-            .unwrap_or_else(|| panic!(
-                "Column '{}' not found in batch. Available columns: {:?}", 
+        let column = batch.column_by_name(column_name).unwrap_or_else(|| {
+            panic!(
+                "Column '{}' not found in batch. Available columns: {:?}",
                 column_name,
-                batch.schema().fields().iter().map(|f| f.name()).collect::<Vec<_>>()
-            ));
-        let actual = column.as_any()
+                batch
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect::<Vec<_>>()
+            )
+        });
+        let actual = column
+            .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .unwrap_or_else(|| panic!(
-                "Column '{}' is not a FixedSizeListArray, actual type: {:?}", 
-                column_name, column.data_type()
-            ));
-        assert_eq!(actual, &expected, "FixedSizeListArray '{}' values don't match", column_name);
+            .unwrap_or_else(|| {
+                panic!(
+                    "Column '{}' is not a FixedSizeListArray, actual type: {:?}",
+                    column_name,
+                    column.data_type()
+                )
+            });
+        assert_eq!(
+            actual, &expected,
+            "FixedSizeListArray '{}' values don't match",
+            column_name
+        );
     }
 
     // Helper function to assert ListArray equality with better error messages
     fn assert_list_equals(batch: &RecordBatch, column_name: &str, expected: ListArray) {
-        let column = batch.column_by_name(column_name)
-            .unwrap_or_else(|| panic!(
-                "Column '{}' not found in batch. Available columns: {:?}", 
+        let column = batch.column_by_name(column_name).unwrap_or_else(|| {
+            panic!(
+                "Column '{}' not found in batch. Available columns: {:?}",
                 column_name,
-                batch.schema().fields().iter().map(|f| f.name()).collect::<Vec<_>>()
-            ));
-        let actual = column.as_any()
+                batch
+                    .schema()
+                    .fields()
+                    .iter()
+                    .map(|f| f.name())
+                    .collect::<Vec<_>>()
+            )
+        });
+        let actual = column
+            .as_any()
             .downcast_ref::<ListArray>()
-            .unwrap_or_else(|| panic!(
-                "Column '{}' is not a ListArray, actual type: {:?}", 
-                column_name, column.data_type()
-            ));
-        assert_eq!(actual, &expected, "ListArray '{}' values don't match", column_name);
+            .unwrap_or_else(|| {
+                panic!(
+                    "Column '{}' is not a ListArray, actual type: {:?}",
+                    column_name,
+                    column.data_type()
+                )
+            });
+        assert_eq!(
+            actual, &expected,
+            "ListArray '{}' values don't match",
+            column_name
+        );
     }
 
     #[test]
@@ -417,7 +458,8 @@ mod tests {
         let record_batches = rosbag2record_batches(test_path)
             .expect("Failed to create record batches from test MCAP file");
 
-        let twist_batch = record_batches.get("Twist")
+        let twist_batch = record_batches
+            .get("Twist")
             .expect("Twist message type not found in record batches");
         let linear_array = twist_batch
             .column_by_name("linear")
@@ -441,13 +483,15 @@ mod tests {
         assert_struct_field_equals(angular_array, "y", Float64Array::from(vec![0.0]));
         assert_struct_field_equals(angular_array, "z", Float64Array::from(vec![-0.6]));
 
-        let vector3_batch = record_batches.get("Vector3")
+        let vector3_batch = record_batches
+            .get("Vector3")
             .expect("Vector3 message type not found in record batches");
         assert_column_equals(vector3_batch, "x", Float64Array::from(vec![1.1]));
         assert_column_equals(vector3_batch, "y", Float64Array::from(vec![2.2]));
         assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
 
-        let string_batch = record_batches.get("String")
+        let string_batch = record_batches
+            .get("String")
             .expect("String message type not found in record batches");
         assert_column_equals(
             string_batch,
