@@ -16,3 +16,6 @@ parquet = {version = "56.0.0", features = ["arrow"]}
 paste = "1.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+debug = true

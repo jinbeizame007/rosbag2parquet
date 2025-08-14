@@ -231,27 +231,34 @@ pub fn parse_msg_definition_from_schema_section<'a>(
             let data_type = line
                 .split_whitespace()
                 .next()
-                .unwrap_or_else(|| panic!(
-                    "Could not extract data type from line: '{}' in section: '{}'",
-                    line, schema_section.type_name
-                ))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Could not extract data type from line: '{}' in section: '{}'",
+                        line, schema_section.type_name
+                    )
+                })
                 .rsplit("/")
                 .next()
-                .unwrap_or_else(|| panic!(
-                    "Could not extract type name from data type: '{}' in section: '{}'",
-                    line, schema_section.type_name
-                ));
-            let name = line.split_whitespace().nth(1)
-                .unwrap_or_else(|| panic!(
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Could not extract type name from data type: '{}' in section: '{}'",
+                        line, schema_section.type_name
+                    )
+                });
+            let name = line.split_whitespace().nth(1).unwrap_or_else(|| {
+                panic!(
                     "Could not extract field name from line: '{}' in section: '{}'",
                     line, schema_section.type_name
-                ));
+                )
+            });
 
             let data_type = ros_data_type(data_type)
-                .unwrap_or_else(|err| panic!(
-                    "Failed to parse data type '{}' in section '{}': {}",
-                    data_type, schema_section.type_name, err
-                ))
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "Failed to parse data type '{}' in section '{}': {}",
+                        data_type, schema_section.type_name, err
+                    )
+                })
                 .1;
             let field = FieldDefinition::new(data_type, name);
             fields.push(field);
@@ -333,34 +340,32 @@ pub mod test_helpers {
 
     // Helper builder for creating field definitions
     pub struct FieldDefBuilder;
-    
+
     impl FieldDefBuilder {
         pub fn primitive(data_type: Primitive, name: &'static str) -> FieldDefinition<'static> {
-            FieldDefinition::new(
-                FieldType::Base(BaseType::Primitive(data_type)),
-                name,
-            )
+            FieldDefinition::new(FieldType::Base(BaseType::Primitive(data_type)), name)
         }
-        
+
         pub fn complex(type_name: &str, name: &'static str) -> FieldDefinition<'static> {
             FieldDefinition::new(
                 FieldType::Base(BaseType::Complex(type_name.to_string())),
                 name,
             )
         }
-        
+
         pub fn sequence(data_type: Primitive, name: &'static str) -> FieldDefinition<'static> {
-            FieldDefinition::new(
-                FieldType::Sequence(BaseType::Primitive(data_type)),
-                name,
-            )
+            FieldDefinition::new(FieldType::Sequence(BaseType::Primitive(data_type)), name)
         }
-        
-        pub fn array(data_type: Primitive, length: u32, name: &'static str) -> FieldDefinition<'static> {
+
+        pub fn array(
+            data_type: Primitive,
+            length: u32,
+            name: &'static str,
+        ) -> FieldDefinition<'static> {
             FieldDefinition::new(
-                FieldType::Array { 
-                    data_type: BaseType::Primitive(data_type), 
-                    length 
+                FieldType::Array {
+                    data_type: BaseType::Primitive(data_type),
+                    length,
                 },
                 name,
             )
@@ -437,7 +442,7 @@ pub mod test_helpers {
         name: String,
         fields: Vec<Field>,
     }
-    
+
     impl MessageBuilder {
         pub fn new(name: &str) -> Self {
             Self {
@@ -445,8 +450,8 @@ pub mod test_helpers {
                 fields: Vec::new(),
             }
         }
-        
-        pub fn add_primitive<T>(mut self, field_name: &str, value: T) -> Self 
+
+        pub fn add_primitive<T>(mut self, field_name: &str, value: T) -> Self
         where
             PrimitiveValue: From<T>,
         {
@@ -456,7 +461,7 @@ pub mod test_helpers {
             ));
             self
         }
-        
+
         pub fn add_complex(mut self, field_name: &str, message: Message) -> Self {
             self.fields.push(Field::new(
                 field_name.to_string(),
@@ -464,7 +469,7 @@ pub mod test_helpers {
             ));
             self
         }
-        
+
         pub fn build(self) -> Message {
             Message {
                 name: self.name,
@@ -472,38 +477,38 @@ pub mod test_helpers {
             }
         }
     }
-    
+
     // Implement From traits for common primitive conversions
     impl From<f64> for PrimitiveValue {
         fn from(val: f64) -> Self {
             PrimitiveValue::Float64(val)
         }
     }
-    
+
     impl From<f32> for PrimitiveValue {
         fn from(val: f32) -> Self {
             PrimitiveValue::Float32(val)
         }
     }
-    
+
     impl From<i32> for PrimitiveValue {
         fn from(val: i32) -> Self {
             PrimitiveValue::Int32(val)
         }
     }
-    
+
     impl From<u32> for PrimitiveValue {
         fn from(val: u32) -> Self {
             PrimitiveValue::UInt32(val)
         }
     }
-    
+
     impl From<String> for PrimitiveValue {
         fn from(val: String) -> Self {
             PrimitiveValue::String(val)
         }
     }
-    
+
     impl From<&str> for PrimitiveValue {
         fn from(val: &str) -> Self {
             PrimitiveValue::String(val.to_string())

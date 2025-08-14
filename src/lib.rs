@@ -52,6 +52,8 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
+    let max_message_count = 10;
+    let mut message_count = 0;
     for (index, message_result) in message_stream.enumerate() {
         let message =
             message_result.with_context(|| format!("Failed to read message {}", index))?;
@@ -60,6 +62,11 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
             let type_name = extract_message_type(&schema.name).to_string();
             if !type_registry.contains_key(&type_name) {
                 type_registry.insert(type_name, schema.data.clone());
+            }
+
+            message_count += 1;
+            if message_count >= max_message_count {
+                break;
             }
         }
     }
@@ -77,6 +84,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
+    message_count = 0;
     let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
         let message =
@@ -86,6 +94,11 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
             let type_name = extract_message_type(&schema.name).to_string();
             let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
             parsed_messages.push(parsed_message);
+
+            message_count += 1;
+            if message_count >= max_message_count {
+                break;
+            }
         }
     }
 
