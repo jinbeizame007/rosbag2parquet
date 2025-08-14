@@ -185,6 +185,31 @@ fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
     unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
 }
 
+pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
+    record_batches: HashMap<String, RecordBatch>,
+    path: P,
+) {
+    let path = path.as_ref().join("parquet");
+    if !path.exists() {
+        fs::create_dir_all(&path).unwrap();
+    }
+
+    for (name, record_batch) in record_batches {
+        let file = std::fs::File::create(format!("{}/{}.parquet", &path, name)).unwrap();
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::SNAPPY)
+            .build();
+        let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
+            file,
+            record_batch.schema(),
+            Some(props),
+        )
+        .unwrap();
+        writer.write(&record_batch).expect("Writing batch failed");
+        writer.close().unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -197,32 +222,6 @@ mod tests {
 
     use super::*;
     use crate::ros::test_helpers::*;
-
-    // Helper function to write record batches to parquet files
-    fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
-        record_batches: HashMap<String, RecordBatch>,
-        path: P,
-    ) {
-        let path = path.as_ref().join("parquet");
-        if !path.exists() {
-            fs::create_dir_all(&path).unwrap();
-        }
-
-        for (name, record_batch) in record_batches {
-            let file = std::fs::File::create(format!("{}/{}.parquet", &path, name)).unwrap();
-            let props = parquet::file::properties::WriterProperties::builder()
-                .set_compression(parquet::basic::Compression::SNAPPY)
-                .build();
-            let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
-                file,
-                record_batch.schema(),
-                Some(props),
-            )
-            .unwrap();
-            writer.write(&record_batch).expect("Writing batch failed");
-            writer.close().unwrap();
-        }
-    }
 
     // Helper function to assert struct field equality with better error messages
     fn assert_struct_field_equals<T>(struct_array: &StructArray, field_name: &str, expected: T)
