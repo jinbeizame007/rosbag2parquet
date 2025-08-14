@@ -124,9 +124,6 @@ macro_rules! impl_append_sequence_typed {
                     let list_builder = self.downcast_list_builder::<$builder_type>(builder);
 
                     // Extract and append values in optimized batch
-                    // for value in values.$iter_method() {
-                    //     list_builder.values().append_value(*value);
-                    // }
                     list_builder.values().append_slice(
                         values.$iter_method().map(|v| *v).collect::<Vec<$value_type>>().as_slice(),
                     );
