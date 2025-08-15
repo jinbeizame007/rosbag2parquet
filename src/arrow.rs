@@ -130,6 +130,16 @@ fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
     }
 }
 
+fn downcast_list_builder<B>(builder: &mut dyn ArrayBuilder) -> &mut ListBuilder<B>
+where
+    B: ArrayBuilder,
+{
+    builder
+        .as_any_mut()
+        .downcast_mut::<ListBuilder<B>>()
+        .unwrap()
+}
+
 pub struct ArrowSchemaBuilder<'a> {
     message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
 }
@@ -246,7 +256,7 @@ macro_rules! impl_append_sequence_typed {
         $(
             paste::paste! {
                 fn [<append_sequence_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-                    let list_builder = self.downcast_list_builder::<$builder_type>(builder);
+                    let list_builder = downcast_list_builder::<$builder_type>(builder);
                     let collected: Vec<$value_type> = values.$iter_method().map(|v| *v).collect();
                     list_builder.values().append_slice(&collected);
                     list_builder.append(true);
@@ -367,7 +377,7 @@ impl<'a> RecordBatchBuilder<'a> {
     }
 
     fn append_sequence_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-        let list_builder = self.downcast_list_builder::<StringBuilder>(builder);
+        let list_builder = downcast_list_builder::<StringBuilder>(builder);
         for v in values.iter_string() {
             list_builder.values().append_value(v);
         }
@@ -456,7 +466,7 @@ impl<'a> RecordBatchBuilder<'a> {
                 PrimitiveValue::String(_) => self.append_array_string(builder, value),
             },
             BaseValue::Complex(_) => {
-                let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
+                let list_builder = downcast_list_builder::<StructBuilder>(builder);
                 for complex_value in value.iter_complex() {
                     let substruct_builder = list_builder
                         .values()
@@ -498,7 +508,7 @@ impl<'a> RecordBatchBuilder<'a> {
     }
 
     fn append_sequence_complex_typed(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-        let list_builder = self.downcast_list_builder::<StructBuilder>(builder);
+        let list_builder = downcast_list_builder::<StructBuilder>(builder);
         for complex_value in values.iter_complex() {
             let substruct_builder = list_builder
                 .values()
@@ -557,18 +567,6 @@ impl<'a> RecordBatchBuilder<'a> {
         }
     }
 
-    fn downcast_list_builder<'b, B>(
-        &'b self,
-        builder: &'b mut dyn ArrayBuilder,
-    ) -> &'b mut ListBuilder<B>
-    where
-        B: ArrayBuilder + 'b,
-    {
-        builder
-            .as_any_mut()
-            .downcast_mut::<ListBuilder<B>>()
-            .unwrap()
-    }
 }
 
 /// Macro to generate type-specific parse methods for CDR sequence types.
@@ -598,7 +596,7 @@ macro_rules! impl_parse_sequence_typed {
                         values.push(self.[<deserialize_$short_name>](data));
                     }
 
-                    let list_builder = Self::downcast_list_builder::<$builder_type>(builder);
+                    let list_builder = downcast_list_builder::<$builder_type>(builder);
                     list_builder.values().append_slice(&values);
                     list_builder.append(true);
                 }
@@ -764,15 +762,6 @@ impl<'a> CdrArrowParser<'a> {
     }
 
 
-    fn downcast_list_builder<'b, B>(builder: &'b mut dyn ArrayBuilder) -> &'b mut ListBuilder<B>
-    where
-        B: ArrayBuilder + 'b,
-    {
-        builder
-            .as_any_mut()
-            .downcast_mut::<ListBuilder<B>>()
-            .unwrap()
-    }
 
     pub fn parse(&mut self, name: String, data: &[u8]) {
         self.byte_order = if data[1] == 0x00 {
@@ -896,7 +885,7 @@ impl<'a> CdrArrowParser<'a> {
                     };
 
                     let string_builder =
-                        Self::downcast_list_builder::<StringBuilder>(array_builder);
+                        downcast_list_builder::<StringBuilder>(array_builder);
                     for _i in 0..length as usize {
                         string_builder
                             .values()
@@ -913,7 +902,7 @@ impl<'a> CdrArrowParser<'a> {
                     Endianness::LittleEndian => LittleEndian::read_u32(header),
                 };
 
-                let list_builder = Self::downcast_list_builder::<StructBuilder>(array_builder);
+                let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
                 let substruct_builder = list_builder
                     .values()
                     .as_any_mut()
