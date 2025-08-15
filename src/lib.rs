@@ -14,6 +14,7 @@ use mcap::MessageStream;
 use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
+use crate::arrow::CdrArrowParser;
 use crate::arrow::RecordBatchBuilder;
 use crate::cdr::CdrDeserializer;
 use crate::core::extract_message_type;
@@ -189,6 +190,72 @@ fn rosbag2record_batches_impl<P: AsRef<Utf8Path>>(
         let record_batch = record_batch_builder.build(name)?;
         record_batches.insert(name.clone(), record_batch);
     }
+
+    Ok(record_batches)
+}
+
+pub fn rosbag2record_batches_optimized<P: AsRef<Utf8Path>>(
+    path: P,
+    topic_filter: Option<HashSet<String>>,
+) -> Result<HashMap<String, RecordBatch>> {
+    let mcap_file = read_mcap(path)?;
+
+    // First, collect all schema data
+    let mut type_registry = HashMap::new();
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            if let Some(ref filter) = topic_filter {
+                if !filter.contains(&schema.name) {
+                    continue;
+                }
+            }
+
+            let type_name = extract_message_type(&schema.name).to_string();
+            if !type_registry.contains_key(&type_name) {
+                type_registry.insert(type_name, schema.data.clone());
+            }
+        }
+    }
+
+    // Build message definition table from collected schemas
+    let mut msg_definition_table = HashMap::new();
+    for (type_name, schema_data) in &type_registry {
+        let schema_text = std::str::from_utf8(schema_data)?;
+        let sections = ros::parse_schema_sections(type_name, schema_text);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+    }
+
+    // Process messages
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+
+    let converter = ArrowSchemaBuilder::new(&msg_definition_table);
+    let mut schemas = converter.build_all()?;
+
+    let mut parser = CdrArrowParser::new(&msg_definition_table, &mut schemas);
+    for (index, message_result) in message_stream.enumerate() {
+        let message =
+            message_result.with_context(|| format!("Failed to read message {}", index))?;
+
+        if let Some(schema) = &message.channel.schema {
+            if let Some(ref filter) = topic_filter {
+                if !filter.contains(&schema.name) {
+                    continue;
+                }
+            }
+
+            let type_name = extract_message_type(&schema.name).to_string();
+            parser.parse(type_name, &message.data);
+        }
+    }
+
+    let record_batches = parser.finish();
 
     Ok(record_batches)
 }
@@ -467,8 +534,11 @@ mod tests {
     #[test]
     fn test_record_batch_builder() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(test_path)
-            .expect("Failed to create record batches from test MCAP file");
+        // let record_batches = rosbag2record_batches(test_path)
+        //     .expect("Failed to create record batches from test MCAP file");
+        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+
+        println!("keys: {:?}", record_batches.keys());
 
         let twist_batch = record_batches
             .get("Twist")
@@ -518,6 +588,7 @@ mod tests {
     fn test_record_batch_builder_array() {
         let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(test_path).unwrap();
+        // let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
 
         let imu_batch = record_batches.get("Imu").unwrap();
 
@@ -705,23 +776,24 @@ mod tests {
     #[test]
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
-        topic_names.insert("sensor_msgs/msg/JointState".to_string());
+        // topic_names.insert("sensor_msgs/msg/JointState".to_string());
         // topic_names.insert("geometry_msgs/msg/QuaternionStamped".to_string());
         // topic_names.insert("sensor_msgs/msg/PointCloud2".to_string());
         // topic_names.insert("geometry_msgs/msg/PointStamped".to_string());
         // topic_names.insert("std_msgs/msg/String".to_string());
         // topic_names.insert("std_msgs/msg/Float64".to_string());
         // topic_names.insert("geometry_msgs/msg/TwistStamped".to_string());
-        // topic_names.insert("sensor_msgs/msg/Image".to_string());
+        topic_names.insert("sensor_msgs/msg/Image".to_string());
         // topic_names.insert("visualization_msgs/msg/MarkerArray".to_string());
         // topic_names.insert("nav_msgs/msg/OccupancyGrid".to_string());
         // topic_names.insert("diagnostic_msgs/msg/DiagnosticArray".to_string());
         // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
-        // let test_path = "rosbags/large2/large2.mcap";
+        let test_path = "rosbags/large2/large2.mcap";
+        let record_batches = rosbag2record_batches_optimized(test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-        // write_record_batches_to_parquet(record_batches, "rosbags/large2");
+        write_record_batches_to_parquet(record_batches, "rosbags/large2");
     }
 }
