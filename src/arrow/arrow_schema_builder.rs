@@ -4,9 +4,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use arrow::datatypes::{DataType, Field, Schema};
 
-use crate::ros::{
-    BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive,
-};
+use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
 
 pub struct ArrowSchemaBuilder<'a> {
     message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,

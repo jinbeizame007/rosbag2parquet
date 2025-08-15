@@ -15,13 +15,13 @@ pub enum Endianness {
     LittleEndian,
 }
 
-pub struct CdrDeserializer<'a> {
+pub struct CdrRosParser<'a> {
     position: usize,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     byte_order: Endianness,
 }
 
-impl<'a> CdrDeserializer<'a> {
+impl<'a> CdrRosParser<'a> {
     pub fn new(msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>) -> Self {
         Self {
             position: 0,
@@ -321,7 +321,7 @@ mod tests {
     use byteorder::{BigEndian, ByteOrder};
 
     #[test]
-    fn test_cdr_deserializer_vector3d() {
+    fn test_cdr_ros_parser_vector3d() {
         let vector3d_msg_definition = create_vector3_definition();
         let vector3d_msg_definition_table = HashMap::from([("Vector3", vector3d_msg_definition)]);
 
@@ -341,8 +341,8 @@ mod tests {
         ]
         .concat();
 
-        let mut cdr_deserializer = CdrDeserializer::new(&vector3d_msg_definition_table);
-        let value = cdr_deserializer.parse("Vector3", &data);
+        let mut cdr_ros_parser = CdrRosParser::new(&vector3d_msg_definition_table);
+        let value = cdr_ros_parser.parse("Vector3", &data);
         let expected = create_vector3_message(1.0, 2.0, 3.0);
         assert_eq!(value, expected);
     }

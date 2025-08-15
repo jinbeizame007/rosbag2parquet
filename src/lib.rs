@@ -15,7 +15,7 @@ use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
-use crate::cdr::CdrDeserializer;
+use crate::cdr::CdrRosParser;
 use crate::core::extract_message_type;
 use crate::ros::Message;
 
@@ -85,14 +85,14 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     message_count = 0;
-    let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
+    let mut cdr_ros_parser = CdrRosParser::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
         let message =
             message_result.with_context(|| format!("Failed to read message {}", index))?;
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
+            let parsed_message = cdr_ros_parser.parse(&type_name, &message.data);
             parsed_messages.push(parsed_message);
 
             message_count += 1;
