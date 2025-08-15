@@ -1,16 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
     StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
-use arrow::datatypes::{DataType, Field, Fields, Schema};
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
-
-use crate::cdr::Endianness;
-use crate::ros::{BaseValue, FieldValue, Message, Primitive, PrimitiveValue};
+use arrow::datatypes::{DataType, Field, Fields};
 
 pub fn create_fixed_size_list_builder(field: &Field, length: i32) -> Box<dyn ArrayBuilder> {
     match field.data_type() {
@@ -164,56 +157,6 @@ where
         .unwrap()
 }
 
-macro_rules! impl_append_sequence_typed {
-    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident),* $(,)?) => {
-        $(
-            paste::paste! {
-                fn [<append_sequence_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-                    let list_builder = $crate::arrow::core::downcast_list_builder::<$builder_type>(builder);
-                    let collected: Vec<$value_type> = values.$iter_method().map(|v| *v).collect();
-                    list_builder.values().append_slice(&collected);
-                    list_builder.append(true);
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! impl_append_array_typed {
-    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident),* $(,)?) => {
-        $(
-            paste::paste! {
-                fn [<append_array_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-                    let array_builder = builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<$builder_type>>()
-                        .unwrap();
-
-                    for value in values.$iter_method() {
-                        array_builder.values().append_value(*value);
-                    }
-                    array_builder.append(true);
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! impl_append_primitive_typed {
-    ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
-        $(
-            paste::paste! {
-                fn [<append_primitive_ $short_name>](&self, builder: &mut dyn ArrayBuilder, value: $value_type) {
-                    let typed_builder = builder.as_any_mut()
-                        .downcast_mut::<$builder_type>()
-                        .unwrap();
-                    typed_builder.append_value(value);
-                }
-            }
-        )*
-    };
-}
-
 macro_rules! impl_parse_sequence_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
@@ -272,9 +215,6 @@ macro_rules! impl_parse_primitive_typed {
     };
 }
 
-pub(crate) use impl_append_array_typed;
-pub(crate) use impl_append_primitive_typed;
-pub(crate) use impl_append_sequence_typed;
 pub(crate) use impl_parse_array_typed;
 pub(crate) use impl_parse_primitive_typed;
 pub(crate) use impl_parse_sequence_typed;

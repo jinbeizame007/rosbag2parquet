@@ -16,7 +16,7 @@ use crate::arrow::core::{
     impl_parse_sequence_typed,
 };
 use crate::cdr::Endianness;
-use crate::ros::{BaseType, FieldDefinition, FieldType, Message, MessageDefinition, Primitive};
+use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
 
 pub struct CdrArrowParser<'a> {
     array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
