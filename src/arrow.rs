@@ -861,7 +861,7 @@ impl<'a> CdrArrowParser<'a> {
                 Primitive::String => {
                     let string_builder =
                         downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
-                    for _i in 0..*length as usize {
+                    for _ in 0..*length as usize {
                         string_builder
                             .values()
                             .append_value(self.deserialize_string(data));
@@ -873,7 +873,7 @@ impl<'a> CdrArrowParser<'a> {
                 let substruct_builder =
                     downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
 
-                for i in 0..*length as usize {
+                for _ in 0..*length as usize {
                     self.parse_complex(name, data, substruct_builder);
                 }
                 substruct_builder.append(true);
@@ -911,7 +911,7 @@ impl<'a> CdrArrowParser<'a> {
                     let length = self.read_length_from_header(data);
 
                     let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
-                    for _i in 0..length as usize {
+                    for _ in 0..length as usize {
                         string_builder
                             .values()
                             .append_value(self.deserialize_string(data));
@@ -929,7 +929,7 @@ impl<'a> CdrArrowParser<'a> {
                     .downcast_mut::<StructBuilder>()
                     .unwrap();
 
-                for _i in 0..length as usize {
+                for _ in 0..length as usize {
                     self.parse_complex(name, data, substruct_builder);
                 }
                 list_builder.append(true);
