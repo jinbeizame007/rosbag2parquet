@@ -191,18 +191,25 @@ impl<'a> ArrowSchemaBuilder<'a> {
     }
 }
 
-// Macro to generate type-specific append_sequence methods
+/// Macro to generate type-specific append methods for sequence types.
+/// 
+/// This macro generates methods that append values from a BaseValue slice
+/// to Arrow ListBuilder instances. Each generated method is specialized
+/// for a specific primitive type.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
+/// - `$iter_method`: Method to iterate values (e.g., iter_bool)
 macro_rules! impl_append_sequence_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident),* $(,)?) => {
         $(
             paste::paste! {
                 fn [<append_sequence_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
                     let list_builder = self.downcast_list_builder::<$builder_type>(builder);
-
-                    // Extract and append values in optimized batch
-                    list_builder.values().append_slice(
-                        values.$iter_method().map(|v| *v).collect::<Vec<$value_type>>().as_slice(),
-                    );
+                    let collected: Vec<$value_type> = values.$iter_method().map(|v| *v).collect();
+                    list_builder.values().append_slice(&collected);
                     list_builder.append(true);
                 }
             }
@@ -210,7 +217,18 @@ macro_rules! impl_append_sequence_typed {
     };
 }
 
-// Macro to generate type-specific append_array methods
+/// Macro to generate type-specific append methods for fixed-size array types.
+/// 
+/// This macro generates methods that append values from a BaseValue slice
+/// to Arrow FixedSizeListBuilder instances. Each generated method is specialized
+/// for a specific primitive type.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
+/// - `$iter_method`: Method to iterate values (e.g., iter_bool)
+/// - `$list_type`: List builder type (FixedSizeListBuilder)
 macro_rules! impl_append_array_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident => $list_type:ident),* $(,)?) => {
         $(
@@ -220,8 +238,7 @@ macro_rules! impl_append_array_typed {
                         .as_any_mut()
                         .downcast_mut::<$list_type<$builder_type>>()
                         .unwrap();
-
-                    // Extract and append values in optimized batch
+                    
                     for value in values.$iter_method() {
                         array_builder.values().append_value(*value);
                     }
@@ -232,7 +249,16 @@ macro_rules! impl_append_array_typed {
     };
 }
 
-// Macro to generate type-specific append_primitive methods
+/// Macro to generate type-specific append methods for primitive types.
+/// 
+/// This macro generates methods that append a single primitive value
+/// to the corresponding Arrow builder. Each generated method is specialized
+/// for a specific primitive type.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
 macro_rules! impl_append_primitive_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
@@ -546,7 +572,16 @@ impl<'a> RecordBatchBuilder<'a> {
     }
 }
 
-// Macro to generate type-specific append_sequence methods
+/// Macro to generate type-specific parse methods for CDR sequence types.
+/// 
+/// This macro generates methods that parse CDR-encoded sequences and append
+/// them to Arrow ListBuilder instances. Each method handles the CDR header,
+/// deserializes values, and appends them to the builder.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
 macro_rules! impl_parse_sequence_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
@@ -573,7 +608,17 @@ macro_rules! impl_parse_sequence_typed {
     };
 }
 
-// Macro to generate type-specific append_array methods
+/// Macro to generate type-specific parse methods for CDR fixed-size array types.
+/// 
+/// This macro generates methods that parse CDR-encoded fixed-size arrays and
+/// append them to Arrow FixedSizeListBuilder instances. Each method deserializes
+/// a fixed number of values and appends them to the builder.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
+/// - `$list_type`: List builder type (FixedSizeListBuilder)
 macro_rules! impl_parse_array_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty => $list_type:ident),* $(,)?) => {
         $(
@@ -596,7 +641,16 @@ macro_rules! impl_parse_array_typed {
     };
 }
 
-// Macro to generate type-specific append_primitive methods
+/// Macro to generate type-specific parse methods for CDR primitive types.
+/// 
+/// This macro generates methods that parse CDR-encoded primitive values and
+/// append them to the corresponding Arrow builder. Each method deserializes
+/// a single value and appends it to the builder.
+/// 
+/// # Parameters
+/// - `$short_name`: Short name for the type (e.g., bool, f32)
+/// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
+/// - `$value_type`: Rust value type (e.g., bool, f32)
 macro_rules! impl_parse_primitive_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
