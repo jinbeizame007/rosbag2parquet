@@ -348,6 +348,14 @@ impl<'a> RecordBatchBuilder<'a> {
         u64 => UInt64Builder => u64 => iter_u64,
     }
 
+    fn append_sequence_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
+        let list_builder = downcast_list_builder::<StringBuilder>(builder);
+        for v in values.iter_string() {
+            list_builder.values().append_value(v);
+        }
+        list_builder.append(true);
+    }
+
     // Generate type-specific array append methods
     impl_append_array_typed! {
         bool => BooleanBuilder => bool => iter_bool => FixedSizeListBuilder,
@@ -363,26 +371,17 @@ impl<'a> RecordBatchBuilder<'a> {
         u64 => UInt64Builder => u64 => iter_u64 => FixedSizeListBuilder,
     }
 
-    // Special methods for String (needs reference handling)
     fn append_array_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
         let array_builder = builder
             .as_any_mut()
-            .downcast_mut::<ListBuilder<StringBuilder>>()
+            .downcast_mut::<FixedSizeListBuilder<StringBuilder>>()
             .unwrap();
-
         for value in values.iter_string() {
             array_builder.values().append_value(value);
         }
         array_builder.append(true);
     }
 
-    fn append_sequence_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
-        let list_builder = downcast_list_builder::<StringBuilder>(builder);
-        for v in values.iter_string() {
-            list_builder.values().append_value(v);
-        }
-        list_builder.append(true);
-    }
 
     // Generate type-specific primitive append methods
     impl_append_primitive_typed! {
