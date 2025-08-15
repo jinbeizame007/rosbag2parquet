@@ -179,7 +179,7 @@ macro_rules! impl_parse_sequence_typed {
 }
 
 macro_rules! impl_parse_array_typed {
-    ($($short_name:ident => $builder_type:ident => $value_type:ty => $list_type:ident),* $(,)?) => {
+    ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
                 fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8], length: &u32) {
@@ -190,7 +190,7 @@ macro_rules! impl_parse_array_typed {
 
                     let array_builder = builder
                         .as_any_mut()
-                        .downcast_mut::<$list_type<$builder_type>>()
+                        .downcast_mut::<FixedSizeListBuilder<$builder_type>>()
                         .unwrap();
                     array_builder.values().append_slice(&values);
                     array_builder.append(true);

@@ -93,17 +93,17 @@ impl<'a> CdrArrowParser<'a> {
     }
 
     impl_parse_array_typed! {
-        bool => BooleanBuilder => bool => FixedSizeListBuilder,
-        f32 => Float32Builder => f32 => FixedSizeListBuilder,
-        f64 => Float64Builder => f64 => FixedSizeListBuilder,
-        i8 => Int8Builder => i8 => FixedSizeListBuilder,
-        u8 => UInt8Builder => u8 => FixedSizeListBuilder,
-        i16 => Int16Builder => i16 => FixedSizeListBuilder,
-        u16 => UInt16Builder => u16 => FixedSizeListBuilder,
-        i32 => Int32Builder => i32 => FixedSizeListBuilder,
-        u32 => UInt32Builder => u32 => FixedSizeListBuilder,
-        i64 => Int64Builder => i64 => FixedSizeListBuilder,
-        u64 => UInt64Builder => u64 => FixedSizeListBuilder,
+        bool => BooleanBuilder => bool,
+        f32 => Float32Builder => f32,
+        f64 => Float64Builder => f64,
+        i8 => Int8Builder => i8,
+        u8 => UInt8Builder => u8,
+        i16 => Int16Builder => i16,
+        u16 => UInt16Builder => u16,
+        i32 => Int32Builder => i32,
+        u32 => UInt32Builder => u32,
+        i64 => Int64Builder => i64,
+        u64 => UInt64Builder => u64,
     }
 
     impl_parse_primitive_typed! {
