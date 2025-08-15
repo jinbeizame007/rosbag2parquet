@@ -581,16 +581,9 @@ macro_rules! impl_parse_array_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty => $list_type:ident),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8]) {
-                    self.align_to(4);
-                    let header = self.next_bytes(data, 4);
-                    let length = match self.byte_order {
-                        Endianness::BigEndian => BigEndian::read_u32(header),
-                        Endianness::LittleEndian => LittleEndian::read_u32(header),
-                    };
-
-                    let mut values = Vec::<$value_type>::with_capacity(length as usize);
-                    for i in 0..length as usize {
+                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8], length: &u32) {
+                    let mut values = Vec::<$value_type>::with_capacity(*length as usize);
+                    for i in 0..*length as usize {
                         values.push(self.[<deserialize_ $short_name>](data));
                     }
 
@@ -852,19 +845,19 @@ impl<'a> CdrArrowParser<'a> {
     ) {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
-                Primitive::Bool => self.parse_array_bool(array_builder, data),
+                Primitive::Bool => self.parse_array_bool(array_builder, data, length),
                 Primitive::Byte => todo!(),
                 Primitive::Char => todo!(),
-                Primitive::Float32 => self.parse_array_f32(array_builder, data),
-                Primitive::Float64 => self.parse_array_f64(array_builder, data),
-                Primitive::Int8 => self.parse_array_i8(array_builder, data),
-                Primitive::UInt8 => self.parse_array_u8(array_builder, data),
-                Primitive::Int16 => self.parse_array_i16(array_builder, data),
-                Primitive::UInt16 => self.parse_array_u16(array_builder, data),
-                Primitive::Int32 => self.parse_array_i32(array_builder, data),
-                Primitive::UInt32 => self.parse_array_u32(array_builder, data),
-                Primitive::Int64 => self.parse_array_i64(array_builder, data),
-                Primitive::UInt64 => self.parse_array_u64(array_builder, data),
+                Primitive::Float32 => self.parse_array_f32(array_builder, data, length),
+                Primitive::Float64 => self.parse_array_f64(array_builder, data, length),
+                Primitive::Int8 => self.parse_array_i8(array_builder, data, length),
+                Primitive::UInt8 => self.parse_array_u8(array_builder, data, length),
+                Primitive::Int16 => self.parse_array_i16(array_builder, data, length),
+                Primitive::UInt16 => self.parse_array_u16(array_builder, data, length),
+                Primitive::Int32 => self.parse_array_i32(array_builder, data, length),
+                Primitive::UInt32 => self.parse_array_u32(array_builder, data, length),
+                Primitive::Int64 => self.parse_array_i64(array_builder, data, length),
+                Primitive::UInt64 => self.parse_array_u64(array_builder, data, length),
                 Primitive::String => {
                     let string_builder = array_builder
                         .as_any_mut()

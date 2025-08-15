@@ -534,9 +534,8 @@ mod tests {
     #[test]
     fn test_record_batch_builder() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        // let record_batches = rosbag2record_batches(test_path)
-        //     .expect("Failed to create record batches from test MCAP file");
-        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(test_path)
+            .expect("Failed to create record batches from test MCAP file");
 
         println!("keys: {:?}", record_batches.keys());
 
@@ -588,7 +587,245 @@ mod tests {
     fn test_record_batch_builder_array() {
         let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(test_path).unwrap();
-        // let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+
+        let imu_batch = record_batches.get("Imu").unwrap();
+
+        let header_array = imu_batch
+            .column_by_name("header")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let stamp_array = header_array
+            .column_by_name("stamp")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
+        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
+        assert_struct_field_equals(
+            header_array,
+            "frame_id",
+            StringArray::from(vec!["imu_link"]),
+        );
+
+        let orientation_array = imu_batch
+            .column_by_name("orientation")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_struct_field_equals(orientation_array, "x", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "z", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(orientation_array, "w", Float64Array::from(vec![1.0]));
+
+        let expected_orientation_covariance_array =
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.1),
+                    Some(0.2),
+                    Some(0.3),
+                    Some(0.4),
+                    Some(0.5),
+                    Some(0.6),
+                    Some(0.7),
+                    Some(0.8),
+                    Some(0.9),
+                ])],
+                9,
+            );
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "orientation_covariance",
+            expected_orientation_covariance_array,
+        );
+
+        let angular_velocity_array = imu_batch
+            .column_by_name("angular_velocity")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_struct_field_equals(angular_velocity_array, "x", Float64Array::from(vec![0.1]));
+        assert_struct_field_equals(angular_velocity_array, "y", Float64Array::from(vec![0.2]));
+        assert_struct_field_equals(angular_velocity_array, "z", Float64Array::from(vec![0.3]));
+
+        let expected_angular_velocity_covariance_array =
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.9),
+                    Some(0.8),
+                    Some(0.7),
+                    Some(0.6),
+                    Some(0.5),
+                    Some(0.4),
+                    Some(0.3),
+                    Some(0.2),
+                    Some(0.1),
+                ])],
+                9,
+            );
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "angular_velocity_covariance",
+            expected_angular_velocity_covariance_array,
+        );
+
+        let linear_acceleration_array = imu_batch
+            .column_by_name("linear_acceleration")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "x",
+            Float64Array::from(vec![1.0]),
+        );
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "y",
+            Float64Array::from(vec![2.0]),
+        );
+        assert_struct_field_equals(
+            linear_acceleration_array,
+            "z",
+            Float64Array::from(vec![3.0]),
+        );
+
+        let expected_linear_acceleration_covariance_array =
+            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
+                vec![Some(vec![
+                    Some(0.1),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.1),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.1),
+                ])],
+                9,
+            );
+        assert_fixed_size_list_equals(
+            imu_batch,
+            "linear_acceleration_covariance",
+            expected_linear_acceleration_covariance_array,
+        );
+
+        // ********** JointState **********
+
+        let joint_state_batch = record_batches.get("JointState").unwrap();
+        let header_array = joint_state_batch
+            .column_by_name("header")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        let stamp_array = header_array
+            .column_by_name("stamp")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
+        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
+        assert_struct_field_equals(header_array, "frame_id", StringArray::from(vec![""]));
+
+        let name_array = joint_state_batch
+            .column_by_name("name")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let expected_name_array = Arc::new(StringArray::from(vec!["joint1", "joint2", "joint3"]));
+        assert_eq!(
+            *name_array
+                .value(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap(),
+            *expected_name_array.as_ref()
+        );
+
+        let expected_position_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
+        ]);
+        assert_list_equals(joint_state_batch, "position", expected_position_array);
+
+        let expected_velocity_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
+        ]);
+        assert_list_equals(joint_state_batch, "velocity", expected_velocity_array);
+
+        let expected_effort_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
+            Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
+        ]);
+        assert_list_equals(joint_state_batch, "effort", expected_effort_array);
+
+        write_record_batches_to_parquet(record_batches, "rosbags/array_msgs");
+    }
+
+    #[test]
+    fn test_cdr_arrow_parser() {
+        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+
+        println!("keys: {:?}", record_batches.keys());
+
+        let twist_batch = record_batches
+            .get("Twist")
+            .expect("Twist message type not found in record batches");
+        let linear_array = twist_batch
+            .column_by_name("linear")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        assert_struct_field_equals(linear_array, "x", Float64Array::from(vec![1.2]));
+        assert_struct_field_equals(linear_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(linear_array, "z", Float64Array::from(vec![0.0]));
+
+        let angular_array = twist_batch
+            .column_by_name("angular")
+            .unwrap()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+
+        assert_struct_field_equals(angular_array, "x", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(angular_array, "y", Float64Array::from(vec![0.0]));
+        assert_struct_field_equals(angular_array, "z", Float64Array::from(vec![-0.6]));
+
+        let vector3_batch = record_batches
+            .get("Vector3")
+            .expect("Vector3 message type not found in record batches");
+        assert_column_equals(vector3_batch, "x", Float64Array::from(vec![1.1]));
+        assert_column_equals(vector3_batch, "y", Float64Array::from(vec![2.2]));
+        assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
+
+        let string_batch = record_batches
+            .get("String")
+            .expect("String message type not found in record batches");
+        assert_column_equals(
+            string_batch,
+            "data",
+            StringArray::from(vec!["Hello, World!"]),
+        );
+
+        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs");
+    }
+
+    #[test]
+    fn test_cdr_arrow_parser_array() {
+        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
+        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
 
         let imu_batch = record_batches.get("Imu").unwrap();
 
@@ -776,14 +1013,14 @@ mod tests {
     #[test]
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
-        // topic_names.insert("sensor_msgs/msg/JointState".to_string());
+        topic_names.insert("sensor_msgs/msg/JointState".to_string());
         // topic_names.insert("geometry_msgs/msg/QuaternionStamped".to_string());
         // topic_names.insert("sensor_msgs/msg/PointCloud2".to_string());
         // topic_names.insert("geometry_msgs/msg/PointStamped".to_string());
         // topic_names.insert("std_msgs/msg/String".to_string());
         // topic_names.insert("std_msgs/msg/Float64".to_string());
         // topic_names.insert("geometry_msgs/msg/TwistStamped".to_string());
-        topic_names.insert("sensor_msgs/msg/Image".to_string());
+        // topic_names.insert("sensor_msgs/msg/Image".to_string());
         // topic_names.insert("visualization_msgs/msg/MarkerArray".to_string());
         // topic_names.insert("nav_msgs/msg/OccupancyGrid".to_string());
         // topic_names.insert("diagnostic_msgs/msg/DiagnosticArray".to_string());
@@ -794,6 +1031,6 @@ mod tests {
         let record_batches = rosbag2record_batches_optimized(test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-        write_record_batches_to_parquet(record_batches, "rosbags/large2");
+        // write_record_batches_to_parquet(record_batches, "rosbags/large2");
     }
 }
