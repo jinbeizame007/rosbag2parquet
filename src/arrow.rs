@@ -91,6 +91,45 @@ fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     }
 }
 
+/// Appends an empty sequence to any ListBuilder type.
+/// 
+/// This function handles the common pattern of appending empty sequences
+/// to Arrow ListBuilder instances. It uses runtime type checking to determine
+/// the correct builder type and calls append(true) on it.
+///
+/// # Arguments
+/// * `builder` - A mutable reference to any ArrayBuilder that should be a ListBuilder
+fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
+    let any = builder.as_any_mut();
+    if any.is::<ListBuilder<BooleanBuilder>>() {
+        any.downcast_mut::<ListBuilder<BooleanBuilder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<UInt8Builder>>() {
+        any.downcast_mut::<ListBuilder<UInt8Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<UInt16Builder>>() {
+        any.downcast_mut::<ListBuilder<UInt16Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<UInt32Builder>>() {
+        any.downcast_mut::<ListBuilder<UInt32Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<UInt64Builder>>() {
+        any.downcast_mut::<ListBuilder<UInt64Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Int8Builder>>() {
+        any.downcast_mut::<ListBuilder<Int8Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Int16Builder>>() {
+        any.downcast_mut::<ListBuilder<Int16Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Int32Builder>>() {
+        any.downcast_mut::<ListBuilder<Int32Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Int64Builder>>() {
+        any.downcast_mut::<ListBuilder<Int64Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Float32Builder>>() {
+        any.downcast_mut::<ListBuilder<Float32Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<Float64Builder>>() {
+        any.downcast_mut::<ListBuilder<Float64Builder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<StringBuilder>>() {
+        any.downcast_mut::<ListBuilder<StringBuilder>>().unwrap().append(true);
+    } else if any.is::<ListBuilder<StructBuilder>>() {
+        any.downcast_mut::<ListBuilder<StructBuilder>>().unwrap().append(true);
+    }
+}
+
 pub struct ArrowSchemaBuilder<'a> {
     message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
 }
@@ -433,47 +472,7 @@ impl<'a> RecordBatchBuilder<'a> {
 
     fn append_sequence(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
         if value.is_empty() {
-            let any = builder.as_any_mut();
-            if any.is::<ListBuilder<BooleanBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<BooleanBuilder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt8Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt8Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt16Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt16Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int8Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int8Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int16Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int16Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Float32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Float32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Float64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Float64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<StringBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<StringBuilder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<StructBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<StructBuilder>>().unwrap();
-                list_builder.append(true);
-            }
+            append_empty_list_builder(builder);
             return;
         }
 
@@ -869,47 +868,7 @@ impl<'a> CdrArrowParser<'a> {
         array_builder: &mut dyn ArrayBuilder,
     ) {
         if data.is_empty() {
-            let any = array_builder.as_any_mut();
-            if any.is::<ListBuilder<BooleanBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<BooleanBuilder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt8Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt8Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt16Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt16Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<UInt64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<UInt64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int8Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int8Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int16Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int16Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Int64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Int64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Float32Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Float32Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<Float64Builder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<Float64Builder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<StringBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<StringBuilder>>().unwrap();
-                list_builder.append(true);
-            } else if any.is::<ListBuilder<StructBuilder>>() {
-                let list_builder = any.downcast_mut::<ListBuilder<StructBuilder>>().unwrap();
-                list_builder.append(true);
-            }
+            append_empty_list_builder(array_builder);
             return;
         }
 
