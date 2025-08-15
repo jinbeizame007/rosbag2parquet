@@ -137,8 +137,8 @@ impl<'a> CdrArrowParser<'a> {
         let msg_definition = self.msg_definition_table.get(name.as_str()).unwrap();
         let mut array_builders = self.array_builders_table.remove(&name).unwrap();
 
-        for i in 0..array_builders.len() {
-            self.parse_field(&msg_definition.fields[i], data, &mut array_builders[i]);
+        for (array_builder, field) in array_builders.iter_mut().zip(msg_definition.fields.iter()) {
+            self.parse_field(field, data, array_builder);
         }
 
         self.array_builders_table.insert(name, array_builders);
@@ -181,27 +181,40 @@ impl<'a> CdrArrowParser<'a> {
                 Primitive::UInt32 => self.parse_array_u32(array_builder, data, length),
                 Primitive::Int64 => self.parse_array_i64(array_builder, data, length),
                 Primitive::UInt64 => self.parse_array_u64(array_builder, data, length),
-                Primitive::String => {
-                    let string_builder =
-                        downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
-                    for _ in 0..*length as usize {
-                        string_builder
-                            .values()
-                            .append_value(self.deserialize_string(data));
-                    }
-                    string_builder.append(true);
-                }
+                Primitive::String => self.parse_array_string(array_builder, data, length),
             },
-            BaseType::Complex(name) => {
-                let substruct_builder =
-                    downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
-
-                for _ in 0..*length as usize {
-                    self.parse_complex(name, data, substruct_builder);
-                }
-                substruct_builder.append(true);
-            }
+            BaseType::Complex(name) => self.parse_array_complex(array_builder, name, length, data),
         }
+    }
+
+    fn parse_array_string(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        data: &[u8],
+        length: &u32,
+    ) {
+        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        for _ in 0..*length as usize {
+            string_builder
+                .values()
+                .append_value(self.deserialize_string(data));
+        }
+        string_builder.append(true);
+    }
+
+    fn parse_array_complex(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        name: &str,
+        length: &u32,
+        data: &[u8],
+    ) {
+        let substruct_builder = downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
+
+        for _ in 0..*length as usize {
+            self.parse_complex(name, data, substruct_builder);
+        }
+        substruct_builder.append(true);
     }
 
     fn parse_sequence(
@@ -230,34 +243,43 @@ impl<'a> CdrArrowParser<'a> {
                 Primitive::UInt32 => self.parse_sequence_u32(array_builder, data),
                 Primitive::Int64 => self.parse_sequence_i64(array_builder, data),
                 Primitive::UInt64 => self.parse_sequence_u64(array_builder, data),
-                Primitive::String => {
-                    let length = self.read_length_from_header(data);
-
-                    let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
-                    for _ in 0..length as usize {
-                        string_builder
-                            .values()
-                            .append_value(self.deserialize_string(data));
-                    }
-                    string_builder.append(true);
-                }
+                Primitive::String => self.parse_sequence_string(array_builder, data),
             },
-            BaseType::Complex(name) => {
-                let length = self.read_length_from_header(data);
-
-                let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
-                let substruct_builder = list_builder
-                    .values()
-                    .as_any_mut()
-                    .downcast_mut::<StructBuilder>()
-                    .unwrap();
-
-                for _ in 0..length as usize {
-                    self.parse_complex(name, data, substruct_builder);
-                }
-                list_builder.append(true);
-            }
+            BaseType::Complex(name) => self.parse_sequence_complex(array_builder, name, data),
         }
+    }
+
+    fn parse_sequence_string(&mut self, array_builder: &mut dyn ArrayBuilder, data: &[u8]) {
+        let length = self.read_length_from_header(data);
+
+        let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
+        for _ in 0..length as usize {
+            string_builder
+                .values()
+                .append_value(self.deserialize_string(data));
+        }
+        string_builder.append(true);
+    }
+
+    fn parse_sequence_complex(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        name: &str,
+        data: &[u8],
+    ) {
+        let length = self.read_length_from_header(data);
+
+        let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
+        let substruct_builder = list_builder
+            .values()
+            .as_any_mut()
+            .downcast_mut::<StructBuilder>()
+            .unwrap();
+
+        for _ in 0..length as usize {
+            self.parse_complex(name, data, substruct_builder);
+        }
+        list_builder.append(true);
     }
 
     fn parse_base_type(
