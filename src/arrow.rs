@@ -604,11 +604,11 @@ macro_rules! impl_parse_primitive_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<append_primitive_ $short_name>](&self, builder: &mut dyn ArrayBuilder, value: $value_type) {
+                fn [<parse_ $short_name>](&mut self, data: &[u8], builder: &mut dyn ArrayBuilder) {
                     let typed_builder = builder.as_any_mut()
                         .downcast_mut::<$builder_type>()
                         .unwrap();
-                    typed_builder.append_value(value);
+                    typed_builder.append_value(self.[<deserialize_ $short_name>](data));
                 }
             }
         )*
@@ -695,23 +695,23 @@ impl<'a> CdrArrowParser<'a> {
         u64 => UInt64Builder => u64 => FixedSizeListBuilder,
     }
 
-    // // Generate type-specific primitive append methods
-    // impl_parse_primitive_typed! {
-    //     bool => BooleanBuilder => bool,
-    //     byte => UInt8Builder => u8,
-    //     char => UInt8Builder => u8,
-    //     f32 => Float32Builder => f32,
-    //     f64 => Float64Builder => f64,
-    //     i8 => Int8Builder => i8,
-    //     u8 => UInt8Builder => u8,
-    //     i16 => Int16Builder => i16,
-    //     u16 => UInt16Builder => u16,
-    //     i32 => Int32Builder => i32,
-    //     u32 => UInt32Builder => u32,
-    //     i64 => Int64Builder => i64,
-    //     u64 => UInt64Builder => u64,
-    //     string => StringBuilder => &str,
-    // }
+    // Generate type-specific primitive append methods
+    impl_parse_primitive_typed! {
+        bool => BooleanBuilder => bool,
+        // byte => UInt8Builder => u8,
+        // char => UInt8Builder => u8,
+        f32 => Float32Builder => f32,
+        f64 => Float64Builder => f64,
+        i8 => Int8Builder => i8,
+        u8 => UInt8Builder => u8,
+        i16 => Int16Builder => i16,
+        u16 => UInt16Builder => u16,
+        i32 => Int32Builder => i32,
+        u32 => UInt32Builder => u32,
+        i64 => Int64Builder => i64,
+        u64 => UInt64Builder => u64,
+        string => StringBuilder => String,
+    }
 
     fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
         match data_type {
@@ -1049,102 +1049,6 @@ impl<'a> CdrArrowParser<'a> {
             Primitive::UInt64 => self.parse_u64(data, array_builder),
             Primitive::String => self.parse_string(data, array_builder),
         }
-    }
-
-    fn parse_bool(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let bool_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<BooleanBuilder>()
-            .unwrap();
-        bool_builder.append_value(self.deserialize_bool(data));
-    }
-
-    fn parse_f32(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let f32_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Float32Builder>()
-            .unwrap();
-        f32_builder.append_value(self.deserialize_f32(data));
-    }
-
-    fn parse_f64(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let f64_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Float64Builder>()
-            .unwrap();
-        f64_builder.append_value(self.deserialize_f64(data));
-    }
-
-    fn parse_i8(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let i8_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Int8Builder>()
-            .unwrap();
-        i8_builder.append_value(self.deserialize_i8(data));
-    }
-
-    fn parse_u8(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let u8_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<UInt8Builder>()
-            .unwrap();
-        u8_builder.append_value(self.deserialize_u8(data));
-    }
-
-    fn parse_i16(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let i16_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Int16Builder>()
-            .unwrap();
-        i16_builder.append_value(self.deserialize_i16(data));
-    }
-
-    fn parse_u16(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let u16_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<UInt16Builder>()
-            .unwrap();
-        u16_builder.append_value(self.deserialize_u16(data));
-    }
-
-    fn parse_i32(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let i32_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Int32Builder>()
-            .unwrap();
-        i32_builder.append_value(self.deserialize_i32(data));
-    }
-
-    fn parse_u32(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let u32_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<UInt32Builder>()
-            .unwrap();
-        u32_builder.append_value(self.deserialize_u32(data));
-    }
-
-    fn parse_i64(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let i64_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<Int64Builder>()
-            .unwrap();
-        i64_builder.append_value(self.deserialize_i64(data));
-    }
-
-    fn parse_u64(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let u64_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<UInt64Builder>()
-            .unwrap();
-        u64_builder.append_value(self.deserialize_u64(data));
-    }
-
-    fn parse_string(&mut self, data: &[u8], array_builder: &mut dyn ArrayBuilder) {
-        let string_builder = array_builder
-            .as_any_mut()
-            .downcast_mut::<StringBuilder>()
-            .unwrap();
-        string_builder.append_value(self.deserialize_string(data));
     }
 
     #[inline]
