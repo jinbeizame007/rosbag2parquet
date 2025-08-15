@@ -1,7 +1,4 @@
-use rosbag2parquet::{
-    rosbag2record_batches_optimized, rosbag2record_batches_with_topic_names,
-    write_record_batches_to_parquet,
-};
+use rosbag2parquet::{rosbag2record_batches, write_record_batches_to_parquet};
 use std::collections::HashSet;
 
 fn main() {
@@ -21,7 +18,6 @@ fn main() {
     // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
     let test_path = "rosbags/large2/large2.mcap";
-    // let record_batches = rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-    let record_batches = rosbag2record_batches_optimized(test_path, Some(topic_names)).unwrap();
+    let record_batches = rosbag2record_batches(test_path, Some(topic_names)).unwrap();
     write_record_batches_to_parquet(record_batches, "rosbags/large2");
 }

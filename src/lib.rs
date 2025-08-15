@@ -15,7 +15,6 @@ use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
-use crate::arrow::RecordBatchBuilder;
 use crate::cdr::CdrDeserializer;
 use crate::core::extract_message_type;
 use crate::ros::Message;
@@ -106,95 +105,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     Ok(parsed_messages)
 }
 
-pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(path: P) -> Result<HashMap<String, RecordBatch>> {
-    rosbag2record_batches_impl(path, None)
-}
-
-pub fn rosbag2record_batches_with_topic_names<P: AsRef<Utf8Path>>(
-    path: P,
-    topic_names: HashSet<String>,
-) -> Result<HashMap<String, RecordBatch>> {
-    rosbag2record_batches_impl(path, Some(topic_names))
-}
-
-fn rosbag2record_batches_impl<P: AsRef<Utf8Path>>(
-    path: P,
-    topic_filter: Option<HashSet<String>>,
-) -> Result<HashMap<String, RecordBatch>> {
-    let mcap_file = read_mcap(path)?;
-
-    // First, collect all schema data
-    let mut type_registry = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
-
-        if let Some(schema) = &message.channel.schema {
-            if let Some(ref filter) = topic_filter {
-                if !filter.contains(&schema.name) {
-                    continue;
-                }
-            }
-
-            let type_name = extract_message_type(&schema.name).to_string();
-            if !type_registry.contains_key(&type_name) {
-                type_registry.insert(type_name, schema.data.clone());
-            }
-        }
-    }
-
-    // Build message definition table from collected schemas
-    let mut msg_definition_table = HashMap::new();
-    for (type_name, schema_data) in &type_registry {
-        let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = ros::parse_schema_sections(type_name, schema_text);
-        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
-    }
-
-    // Process messages
-    let mut parsed_messages = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    let mut cdr_deserializer = CdrDeserializer::new(&msg_definition_table);
-    for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
-
-        if let Some(schema) = &message.channel.schema {
-            if let Some(ref filter) = topic_filter {
-                if !filter.contains(&schema.name) {
-                    continue;
-                }
-            }
-
-            let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_deserializer.parse(&type_name, &message.data);
-
-            parsed_messages
-                .entry(type_name)
-                .or_insert_with(Vec::new)
-                .push(parsed_message);
-        }
-    }
-
-    let converter = ArrowSchemaBuilder::new(&msg_definition_table);
-    let schemas = converter.build_all()?;
-
-    let mut record_batches = HashMap::new();
-    for (name, ros_messages) in parsed_messages.iter() {
-        let record_batch_builder = RecordBatchBuilder::new(&schemas, ros_messages);
-        let record_batch = record_batch_builder.build(name)?;
-        record_batches.insert(name.clone(), record_batch);
-    }
-
-    Ok(record_batches)
-}
-
-pub fn rosbag2record_batches_optimized<P: AsRef<Utf8Path>>(
+pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     path: P,
     topic_filter: Option<HashSet<String>>,
 ) -> Result<HashMap<String, RecordBatch>> {
@@ -532,249 +443,9 @@ mod tests {
     }
 
     #[test]
-    fn test_record_batch_builder() {
-        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(test_path)
-            .expect("Failed to create record batches from test MCAP file");
-
-        println!("keys: {:?}", record_batches.keys());
-
-        let twist_batch = record_batches
-            .get("Twist")
-            .expect("Twist message type not found in record batches");
-        let linear_array = twist_batch
-            .column_by_name("linear")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-
-        assert_struct_field_equals(linear_array, "x", Float64Array::from(vec![1.2]));
-        assert_struct_field_equals(linear_array, "y", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(linear_array, "z", Float64Array::from(vec![0.0]));
-
-        let angular_array = twist_batch
-            .column_by_name("angular")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-
-        assert_struct_field_equals(angular_array, "x", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(angular_array, "y", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(angular_array, "z", Float64Array::from(vec![-0.6]));
-
-        let vector3_batch = record_batches
-            .get("Vector3")
-            .expect("Vector3 message type not found in record batches");
-        assert_column_equals(vector3_batch, "x", Float64Array::from(vec![1.1]));
-        assert_column_equals(vector3_batch, "y", Float64Array::from(vec![2.2]));
-        assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
-
-        let string_batch = record_batches
-            .get("String")
-            .expect("String message type not found in record batches");
-        assert_column_equals(
-            string_batch,
-            "data",
-            StringArray::from(vec!["Hello, World!"]),
-        );
-
-        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs");
-    }
-
-    #[test]
-    fn test_record_batch_builder_array() {
-        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(test_path).unwrap();
-
-        let imu_batch = record_batches.get("Imu").unwrap();
-
-        let header_array = imu_batch
-            .column_by_name("header")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-        let stamp_array = header_array
-            .column_by_name("stamp")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-
-        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
-        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
-        assert_struct_field_equals(
-            header_array,
-            "frame_id",
-            StringArray::from(vec!["imu_link"]),
-        );
-
-        let orientation_array = imu_batch
-            .column_by_name("orientation")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-        assert_struct_field_equals(orientation_array, "x", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(orientation_array, "y", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(orientation_array, "z", Float64Array::from(vec![0.0]));
-        assert_struct_field_equals(orientation_array, "w", Float64Array::from(vec![1.0]));
-
-        let expected_orientation_covariance_array =
-            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
-                vec![Some(vec![
-                    Some(0.1),
-                    Some(0.2),
-                    Some(0.3),
-                    Some(0.4),
-                    Some(0.5),
-                    Some(0.6),
-                    Some(0.7),
-                    Some(0.8),
-                    Some(0.9),
-                ])],
-                9,
-            );
-        assert_fixed_size_list_equals(
-            imu_batch,
-            "orientation_covariance",
-            expected_orientation_covariance_array,
-        );
-
-        let angular_velocity_array = imu_batch
-            .column_by_name("angular_velocity")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-        assert_struct_field_equals(angular_velocity_array, "x", Float64Array::from(vec![0.1]));
-        assert_struct_field_equals(angular_velocity_array, "y", Float64Array::from(vec![0.2]));
-        assert_struct_field_equals(angular_velocity_array, "z", Float64Array::from(vec![0.3]));
-
-        let expected_angular_velocity_covariance_array =
-            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
-                vec![Some(vec![
-                    Some(0.9),
-                    Some(0.8),
-                    Some(0.7),
-                    Some(0.6),
-                    Some(0.5),
-                    Some(0.4),
-                    Some(0.3),
-                    Some(0.2),
-                    Some(0.1),
-                ])],
-                9,
-            );
-        assert_fixed_size_list_equals(
-            imu_batch,
-            "angular_velocity_covariance",
-            expected_angular_velocity_covariance_array,
-        );
-
-        let linear_acceleration_array = imu_batch
-            .column_by_name("linear_acceleration")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-        assert_struct_field_equals(
-            linear_acceleration_array,
-            "x",
-            Float64Array::from(vec![1.0]),
-        );
-        assert_struct_field_equals(
-            linear_acceleration_array,
-            "y",
-            Float64Array::from(vec![2.0]),
-        );
-        assert_struct_field_equals(
-            linear_acceleration_array,
-            "z",
-            Float64Array::from(vec![3.0]),
-        );
-
-        let expected_linear_acceleration_covariance_array =
-            FixedSizeListArray::from_iter_primitive::<Float64Type, _, _>(
-                vec![Some(vec![
-                    Some(0.1),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.1),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.0),
-                    Some(0.1),
-                ])],
-                9,
-            );
-        assert_fixed_size_list_equals(
-            imu_batch,
-            "linear_acceleration_covariance",
-            expected_linear_acceleration_covariance_array,
-        );
-
-        // ********** JointState **********
-
-        let joint_state_batch = record_batches.get("JointState").unwrap();
-        let header_array = joint_state_batch
-            .column_by_name("header")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-        let stamp_array = header_array
-            .column_by_name("stamp")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap();
-
-        assert_struct_field_equals(stamp_array, "sec", Int32Array::from(vec![0]));
-        assert_struct_field_equals(stamp_array, "nanosec", UInt32Array::from(vec![0]));
-        assert_struct_field_equals(header_array, "frame_id", StringArray::from(vec![""]));
-
-        let name_array = joint_state_batch
-            .column_by_name("name")
-            .unwrap()
-            .as_any()
-            .downcast_ref::<ListArray>()
-            .unwrap();
-        let expected_name_array = Arc::new(StringArray::from(vec!["joint1", "joint2", "joint3"]));
-        assert_eq!(
-            *name_array
-                .value(0)
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap(),
-            *expected_name_array.as_ref()
-        );
-
-        let expected_position_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-            Some(vec![Some(1.5), Some(-0.5), Some(0.8)]),
-        ]);
-        assert_list_equals(joint_state_batch, "position", expected_position_array);
-
-        let expected_velocity_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-            Some(vec![Some(0.1), Some(0.2), Some(0.3)]),
-        ]);
-        assert_list_equals(joint_state_batch, "velocity", expected_velocity_array);
-
-        let expected_effort_array = ListArray::from_iter_primitive::<Float64Type, _, _>(vec![
-            Some(vec![Some(10.1), Some(10.2), Some(10.3)]),
-        ]);
-        assert_list_equals(joint_state_batch, "effort", expected_effort_array);
-
-        write_record_batches_to_parquet(record_batches, "rosbags/array_msgs");
-    }
-
-    #[test]
     fn test_cdr_arrow_parser() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(test_path, None).unwrap();
 
         println!("keys: {:?}", record_batches.keys());
 
@@ -825,7 +496,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser_array() {
         let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches_optimized(test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(test_path, None).unwrap();
 
         let imu_batch = record_batches.get("Imu").unwrap();
 
@@ -1028,7 +699,7 @@ mod tests {
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
         let test_path = "rosbags/large2/large2.mcap";
-        let record_batches = rosbag2record_batches_optimized(test_path, Some(topic_names)).unwrap();
+        let record_batches = rosbag2record_batches(test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
         // write_record_batches_to_parquet(record_batches, "rosbags/large2");
