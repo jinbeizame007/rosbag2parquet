@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use arrow::array::{
-    self, ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
+    ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
     StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
@@ -16,6 +16,80 @@ use crate::ros::{
     BaseType, BaseValue, BaseValueSliceExt, FieldDefinition, FieldType, FieldValue, Message,
     MessageDefinition, Primitive, PrimitiveValue,
 };
+
+// Common helper functions for Arrow builders
+fn create_fixed_size_list_builder(field: &Field, length: i32) -> Box<dyn ArrayBuilder> {
+    match field.data_type() {
+        DataType::Boolean => Box::new(FixedSizeListBuilder::new(BooleanBuilder::new(), length)),
+        DataType::UInt8 => Box::new(FixedSizeListBuilder::new(UInt8Builder::new(), length)),
+        DataType::UInt16 => Box::new(FixedSizeListBuilder::new(UInt16Builder::new(), length)),
+        DataType::UInt32 => Box::new(FixedSizeListBuilder::new(UInt32Builder::new(), length)),
+        DataType::UInt64 => Box::new(FixedSizeListBuilder::new(UInt64Builder::new(), length)),
+        DataType::Int8 => Box::new(FixedSizeListBuilder::new(Int8Builder::new(), length)),
+        DataType::Int16 => Box::new(FixedSizeListBuilder::new(Int16Builder::new(), length)),
+        DataType::Int32 => Box::new(FixedSizeListBuilder::new(Int32Builder::new(), length)),
+        DataType::Int64 => Box::new(FixedSizeListBuilder::new(Int64Builder::new(), length)),
+        DataType::Float32 => Box::new(FixedSizeListBuilder::new(Float32Builder::new(), length)),
+        DataType::Float64 => Box::new(FixedSizeListBuilder::new(Float64Builder::new(), length)),
+        DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
+        DataType::Struct(sub_fields) => {
+            let struct_builder = create_struct_builder(sub_fields);
+            Box::new(FixedSizeListBuilder::new(struct_builder, length))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn create_list_builder(field: &Field) -> Box<dyn ArrayBuilder> {
+    match field.data_type() {
+        DataType::Boolean => Box::new(ListBuilder::new(BooleanBuilder::new())),
+        DataType::UInt8 => Box::new(ListBuilder::new(UInt8Builder::new())),
+        DataType::UInt16 => Box::new(ListBuilder::new(UInt16Builder::new())),
+        DataType::UInt32 => Box::new(ListBuilder::new(UInt32Builder::new())),
+        DataType::UInt64 => Box::new(ListBuilder::new(UInt64Builder::new())),
+        DataType::Int8 => Box::new(ListBuilder::new(Int8Builder::new())),
+        DataType::Int16 => Box::new(ListBuilder::new(Int16Builder::new())),
+        DataType::Int32 => Box::new(ListBuilder::new(Int32Builder::new())),
+        DataType::Int64 => Box::new(ListBuilder::new(Int64Builder::new())),
+        DataType::Float32 => Box::new(ListBuilder::new(Float32Builder::new())),
+        DataType::Float64 => Box::new(ListBuilder::new(Float64Builder::new())),
+        DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
+        DataType::Struct(sub_fields) => {
+            let struct_builder = create_struct_builder(sub_fields);
+            Box::new(ListBuilder::new(struct_builder))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn create_struct_builder(fields: &Fields) -> StructBuilder {
+    let field_builders = fields
+        .iter()
+        .map(|field| create_array_builder(field.data_type()))
+        .collect();
+    StructBuilder::new(fields.clone(), field_builders)
+}
+
+fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
+    match data_type {
+        DataType::Boolean => Box::new(BooleanBuilder::new()),
+        DataType::UInt8 => Box::new(UInt8Builder::new()),
+        DataType::UInt16 => Box::new(UInt16Builder::new()),
+        DataType::UInt32 => Box::new(UInt32Builder::new()),
+        DataType::UInt64 => Box::new(UInt64Builder::new()),
+        DataType::Int8 => Box::new(Int8Builder::new()),
+        DataType::Int16 => Box::new(Int16Builder::new()),
+        DataType::Int32 => Box::new(Int32Builder::new()),
+        DataType::Int64 => Box::new(Int64Builder::new()),
+        DataType::Float32 => Box::new(Float32Builder::new()),
+        DataType::Float64 => Box::new(Float64Builder::new()),
+        DataType::Utf8 => Box::new(StringBuilder::new()),
+        DataType::Struct(fields) => Box::new(create_struct_builder(fields)),
+        DataType::FixedSizeList(field, length) => create_fixed_size_list_builder(field, *length),
+        DataType::List(field) => create_list_builder(field),
+        _ => unreachable!(),
+    }
+}
 
 pub struct ArrowSchemaBuilder<'a> {
     message_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
@@ -253,28 +327,6 @@ impl<'a> RecordBatchBuilder<'a> {
         string => StringBuilder => &str,
     }
 
-    fn create_array_builder(&self, data_type: &DataType) -> Box<dyn ArrayBuilder> {
-        match data_type {
-            DataType::Boolean => Box::new(BooleanBuilder::new()),
-            DataType::UInt8 => Box::new(UInt8Builder::new()),
-            DataType::UInt16 => Box::new(UInt16Builder::new()),
-            DataType::UInt32 => Box::new(UInt32Builder::new()),
-            DataType::UInt64 => Box::new(UInt64Builder::new()),
-            DataType::Int8 => Box::new(Int8Builder::new()),
-            DataType::Int16 => Box::new(Int16Builder::new()),
-            DataType::Int32 => Box::new(Int32Builder::new()),
-            DataType::Int64 => Box::new(Int64Builder::new()),
-            DataType::Float32 => Box::new(Float32Builder::new()),
-            DataType::Float64 => Box::new(Float64Builder::new()),
-            DataType::Utf8 => Box::new(StringBuilder::new()),
-            DataType::Struct(fields) => Box::new(self.build_struct_builder(fields)),
-            DataType::FixedSizeList(field, length) => {
-                self.build_fixed_size_list_builder(field, *length)
-            }
-            DataType::List(field) => self.build_list_builder(field),
-            _ => unreachable!(),
-        }
-    }
 
     pub fn build(&self, name: &str) -> Result<RecordBatch> {
         let schema = self
@@ -284,7 +336,7 @@ impl<'a> RecordBatchBuilder<'a> {
         let mut builders = schema
             .fields()
             .iter()
-            .map(|field| self.create_array_builder(field.data_type()))
+            .map(|field| create_array_builder(field.data_type()))
             .collect::<Vec<_>>();
 
         for message in self.messages.iter() {
@@ -302,63 +354,8 @@ impl<'a> RecordBatchBuilder<'a> {
         RecordBatch::try_new(schema.clone(), arrays).context("Failed to create RecordBatch")
     }
 
-    pub fn build_fixed_size_list_builder(
-        &self,
-        field: &Field,
-        length: i32,
-    ) -> Box<dyn ArrayBuilder> {
-        match field.data_type() {
-            DataType::Boolean => Box::new(FixedSizeListBuilder::new(BooleanBuilder::new(), length)),
-            DataType::UInt8 => Box::new(FixedSizeListBuilder::new(UInt8Builder::new(), length)),
-            DataType::UInt16 => Box::new(FixedSizeListBuilder::new(UInt16Builder::new(), length)),
-            DataType::UInt32 => Box::new(FixedSizeListBuilder::new(UInt32Builder::new(), length)),
-            DataType::UInt64 => Box::new(FixedSizeListBuilder::new(UInt64Builder::new(), length)),
-            DataType::Int8 => Box::new(FixedSizeListBuilder::new(Int8Builder::new(), length)),
-            DataType::Int16 => Box::new(FixedSizeListBuilder::new(Int16Builder::new(), length)),
-            DataType::Int32 => Box::new(FixedSizeListBuilder::new(Int32Builder::new(), length)),
-            DataType::Int64 => Box::new(FixedSizeListBuilder::new(Int64Builder::new(), length)),
-            DataType::Float32 => Box::new(FixedSizeListBuilder::new(Float32Builder::new(), length)),
-            DataType::Float64 => Box::new(FixedSizeListBuilder::new(Float64Builder::new(), length)),
-            DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
-            DataType::Struct(sub_fields) => {
-                let struct_builder = self.build_struct_builder(sub_fields);
-                Box::new(FixedSizeListBuilder::new(struct_builder, length))
-            }
-            _ => unreachable!(),
-        }
-    }
 
-    pub fn build_list_builder(&self, field: &Field) -> Box<dyn ArrayBuilder> {
-        match field.data_type() {
-            DataType::Boolean => Box::new(ListBuilder::new(BooleanBuilder::new())),
-            DataType::UInt8 => Box::new(ListBuilder::new(UInt8Builder::new())),
-            DataType::UInt16 => Box::new(ListBuilder::new(UInt16Builder::new())),
-            DataType::UInt32 => Box::new(ListBuilder::new(UInt32Builder::new())),
-            DataType::UInt64 => Box::new(ListBuilder::new(UInt64Builder::new())),
-            DataType::Int8 => Box::new(ListBuilder::new(Int8Builder::new())),
-            DataType::Int16 => Box::new(ListBuilder::new(Int16Builder::new())),
-            DataType::Int32 => Box::new(ListBuilder::new(Int32Builder::new())),
-            DataType::Int64 => Box::new(ListBuilder::new(Int64Builder::new())),
-            DataType::Float32 => Box::new(ListBuilder::new(Float32Builder::new())),
-            DataType::Float64 => Box::new(ListBuilder::new(Float64Builder::new())),
-            DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
-            DataType::Struct(sub_fields) => {
-                let struct_builder = self.build_struct_builder(sub_fields);
-                Box::new(ListBuilder::new(struct_builder))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn build_struct_builder(&self, fields: &Fields) -> StructBuilder {
-        let field_builders = fields
-            .iter()
-            .map(|field| self.create_array_builder(field.data_type()))
-            .collect();
-        StructBuilder::new(fields.clone(), field_builders)
-    }
-
-    pub fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
+    fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
         match value {
             FieldValue::Base(base_value) => match base_value {
                 BaseValue::Primitive(primitive) => self.append_primitive(builder, primitive),
@@ -375,7 +372,7 @@ impl<'a> RecordBatchBuilder<'a> {
         }
     }
 
-    pub fn append_array(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
+    fn append_array(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
         match &value[0] {
             BaseValue::Primitive(primitive) => match primitive {
                 PrimitiveValue::Bool(_) => self.append_array_bool(builder, value),
@@ -408,7 +405,7 @@ impl<'a> RecordBatchBuilder<'a> {
         }
     }
 
-    pub fn append_sequence(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
+    fn append_sequence(&self, builder: &mut dyn ArrayBuilder, value: &[BaseValue]) {
         if value.is_empty() {
             let any = builder.as_any_mut();
             if any.is::<ListBuilder<BooleanBuilder>>() {
@@ -488,7 +485,7 @@ impl<'a> RecordBatchBuilder<'a> {
         list_builder.append(true);
     }
 
-    pub fn append_complex(&self, struct_builder: &mut StructBuilder, message: &Message) {
+    fn append_complex(&self, struct_builder: &mut StructBuilder, message: &Message) {
         for (i, field_builder) in struct_builder.field_builders_mut().iter_mut().enumerate() {
             let field = &message.value[i];
             match &field.value {
@@ -516,7 +513,7 @@ impl<'a> RecordBatchBuilder<'a> {
         struct_builder.append(true);
     }
 
-    pub fn append_primitive(&self, builder: &mut dyn ArrayBuilder, value: &PrimitiveValue) {
+    fn append_primitive(&self, builder: &mut dyn ArrayBuilder, value: &PrimitiveValue) {
         match value {
             PrimitiveValue::Bool(value) => self.append_primitive_bool(builder, *value),
             PrimitiveValue::Byte(value) => self.append_primitive_byte(builder, *value),
@@ -563,7 +560,7 @@ macro_rules! impl_parse_sequence_typed {
                     };
 
                     let mut values = Vec::<$value_type>::with_capacity(length as usize);
-                    for i in 0..length as usize {
+                    for _i in 0..length as usize {
                         values.push(self.[<deserialize_$short_name>](data));
                     }
 
@@ -583,7 +580,7 @@ macro_rules! impl_parse_array_typed {
             paste::paste! {
                 fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8], length: &u32) {
                     let mut values = Vec::<$value_type>::with_capacity(*length as usize);
-                    for i in 0..*length as usize {
+                    for _i in 0..*length as usize {
                         values.push(self.[<deserialize_ $short_name>](data));
                     }
 
@@ -636,7 +633,7 @@ impl<'a> CdrArrowParser<'a> {
                     schema
                         .fields()
                         .iter()
-                        .map(|field| Self::create_array_builder(field.data_type()))
+                        .map(|field| create_array_builder(field.data_type()))
                         .collect::<Vec<Box<dyn ArrayBuilder>>>(),
                 )
             })
@@ -713,80 +710,6 @@ impl<'a> CdrArrowParser<'a> {
         string => StringBuilder => String,
     }
 
-    fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
-        match data_type {
-            DataType::Boolean => Box::new(BooleanBuilder::new()),
-            DataType::UInt8 => Box::new(UInt8Builder::new()),
-            DataType::UInt16 => Box::new(UInt16Builder::new()),
-            DataType::UInt32 => Box::new(UInt32Builder::new()),
-            DataType::UInt64 => Box::new(UInt64Builder::new()),
-            DataType::Int8 => Box::new(Int8Builder::new()),
-            DataType::Int16 => Box::new(Int16Builder::new()),
-            DataType::Int32 => Box::new(Int32Builder::new()),
-            DataType::Int64 => Box::new(Int64Builder::new()),
-            DataType::Float32 => Box::new(Float32Builder::new()),
-            DataType::Float64 => Box::new(Float64Builder::new()),
-            DataType::Utf8 => Box::new(StringBuilder::new()),
-            DataType::Struct(fields) => Box::new(Self::build_struct_builder(fields)),
-            DataType::FixedSizeList(field, length) => {
-                Self::build_fixed_size_list_builder(field, *length)
-            }
-            DataType::List(field) => Self::build_list_builder(field),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn build_fixed_size_list_builder(field: &Field, length: i32) -> Box<dyn ArrayBuilder> {
-        match field.data_type() {
-            DataType::Boolean => Box::new(FixedSizeListBuilder::new(BooleanBuilder::new(), length)),
-            DataType::UInt8 => Box::new(FixedSizeListBuilder::new(UInt8Builder::new(), length)),
-            DataType::UInt16 => Box::new(FixedSizeListBuilder::new(UInt16Builder::new(), length)),
-            DataType::UInt32 => Box::new(FixedSizeListBuilder::new(UInt32Builder::new(), length)),
-            DataType::UInt64 => Box::new(FixedSizeListBuilder::new(UInt64Builder::new(), length)),
-            DataType::Int8 => Box::new(FixedSizeListBuilder::new(Int8Builder::new(), length)),
-            DataType::Int16 => Box::new(FixedSizeListBuilder::new(Int16Builder::new(), length)),
-            DataType::Int32 => Box::new(FixedSizeListBuilder::new(Int32Builder::new(), length)),
-            DataType::Int64 => Box::new(FixedSizeListBuilder::new(Int64Builder::new(), length)),
-            DataType::Float32 => Box::new(FixedSizeListBuilder::new(Float32Builder::new(), length)),
-            DataType::Float64 => Box::new(FixedSizeListBuilder::new(Float64Builder::new(), length)),
-            DataType::Utf8 => Box::new(FixedSizeListBuilder::new(StringBuilder::new(), length)),
-            DataType::Struct(sub_fields) => {
-                let struct_builder = Self::build_struct_builder(sub_fields);
-                Box::new(FixedSizeListBuilder::new(struct_builder, length))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn build_list_builder(field: &Field) -> Box<dyn ArrayBuilder> {
-        match field.data_type() {
-            DataType::Boolean => Box::new(ListBuilder::new(BooleanBuilder::new())),
-            DataType::UInt8 => Box::new(ListBuilder::new(UInt8Builder::new())),
-            DataType::UInt16 => Box::new(ListBuilder::new(UInt16Builder::new())),
-            DataType::UInt32 => Box::new(ListBuilder::new(UInt32Builder::new())),
-            DataType::UInt64 => Box::new(ListBuilder::new(UInt64Builder::new())),
-            DataType::Int8 => Box::new(ListBuilder::new(Int8Builder::new())),
-            DataType::Int16 => Box::new(ListBuilder::new(Int16Builder::new())),
-            DataType::Int32 => Box::new(ListBuilder::new(Int32Builder::new())),
-            DataType::Int64 => Box::new(ListBuilder::new(Int64Builder::new())),
-            DataType::Float32 => Box::new(ListBuilder::new(Float32Builder::new())),
-            DataType::Float64 => Box::new(ListBuilder::new(Float64Builder::new())),
-            DataType::Utf8 => Box::new(ListBuilder::new(StringBuilder::new())),
-            DataType::Struct(sub_fields) => {
-                let struct_builder = Self::build_struct_builder(sub_fields);
-                Box::new(ListBuilder::new(struct_builder))
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn build_struct_builder(fields: &Fields) -> StructBuilder {
-        let field_builders = fields
-            .iter()
-            .map(|field| Self::create_array_builder(field.data_type()))
-            .collect();
-        StructBuilder::new(fields.clone(), field_builders)
-    }
 
     fn downcast_list_builder<'b, B>(builder: &'b mut dyn ArrayBuilder) -> &'b mut ListBuilder<B>
     where
@@ -863,7 +786,7 @@ impl<'a> CdrArrowParser<'a> {
                         .as_any_mut()
                         .downcast_mut::<FixedSizeListBuilder<StringBuilder>>()
                         .unwrap();
-                    for i in 0..*length as usize {
+                    for _i in 0..*length as usize {
                         string_builder
                             .values()
                             .append_value(self.deserialize_string(data));
@@ -961,7 +884,7 @@ impl<'a> CdrArrowParser<'a> {
 
                     let string_builder =
                         Self::downcast_list_builder::<StringBuilder>(array_builder);
-                    for i in 0..length as usize {
+                    for _i in 0..length as usize {
                         string_builder
                             .values()
                             .append_value(self.deserialize_string(data));
@@ -984,7 +907,7 @@ impl<'a> CdrArrowParser<'a> {
                     .downcast_mut::<StructBuilder>()
                     .unwrap();
 
-                for i in 0..length as usize {
+                for _i in 0..length as usize {
                     self.parse_complex(name, data, substruct_builder);
                 }
                 list_builder.append(true);
