@@ -92,7 +92,7 @@ fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
 }
 
 /// Appends an empty sequence to any ListBuilder type.
-/// 
+///
 /// This function handles the common pattern of appending empty sequences
 /// to Arrow ListBuilder instances. It uses runtime type checking to determine
 /// the correct builder type and calls append(true) on it.
@@ -102,31 +102,57 @@ fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
 fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
     let any = builder.as_any_mut();
     if any.is::<ListBuilder<BooleanBuilder>>() {
-        any.downcast_mut::<ListBuilder<BooleanBuilder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<BooleanBuilder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<UInt8Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt8Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<UInt8Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<UInt16Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt16Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<UInt16Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<UInt32Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt32Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<UInt32Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<UInt64Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt64Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<UInt64Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Int8Builder>>() {
-        any.downcast_mut::<ListBuilder<Int8Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Int8Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Int16Builder>>() {
-        any.downcast_mut::<ListBuilder<Int16Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Int16Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Int32Builder>>() {
-        any.downcast_mut::<ListBuilder<Int32Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Int32Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Int64Builder>>() {
-        any.downcast_mut::<ListBuilder<Int64Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Int64Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Float32Builder>>() {
-        any.downcast_mut::<ListBuilder<Float32Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Float32Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<Float64Builder>>() {
-        any.downcast_mut::<ListBuilder<Float64Builder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<Float64Builder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<StringBuilder>>() {
-        any.downcast_mut::<ListBuilder<StringBuilder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<StringBuilder>>()
+            .unwrap()
+            .append(true);
     } else if any.is::<ListBuilder<StructBuilder>>() {
-        any.downcast_mut::<ListBuilder<StructBuilder>>().unwrap().append(true);
+        any.downcast_mut::<ListBuilder<StructBuilder>>()
+            .unwrap()
+            .append(true);
     }
 }
 
@@ -137,6 +163,18 @@ where
     builder
         .as_any_mut()
         .downcast_mut::<ListBuilder<B>>()
+        .unwrap()
+}
+
+fn downcast_fixed_size_list_builder<B>(
+    builder: &mut dyn ArrayBuilder,
+) -> &mut FixedSizeListBuilder<B>
+where
+    B: ArrayBuilder,
+{
+    builder
+        .as_any_mut()
+        .downcast_mut::<FixedSizeListBuilder<B>>()
         .unwrap()
 }
 
@@ -241,11 +279,11 @@ impl<'a> ArrowSchemaBuilder<'a> {
 }
 
 /// Macro to generate type-specific append methods for sequence types.
-/// 
+///
 /// This macro generates methods that append values from a BaseValue slice
 /// to Arrow ListBuilder instances. Each generated method is specialized
 /// for a specific primitive type.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
@@ -267,27 +305,26 @@ macro_rules! impl_append_sequence_typed {
 }
 
 /// Macro to generate type-specific append methods for fixed-size array types.
-/// 
+///
 /// This macro generates methods that append values from a BaseValue slice
 /// to Arrow FixedSizeListBuilder instances. Each generated method is specialized
 /// for a specific primitive type.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
 /// - `$value_type`: Rust value type (e.g., bool, f32)
 /// - `$iter_method`: Method to iterate values (e.g., iter_bool)
-/// - `$list_type`: List builder type (FixedSizeListBuilder)
 macro_rules! impl_append_array_typed {
-    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident => $list_type:ident),* $(,)?) => {
+    ($($short_name:ident => $builder_type:ident => $value_type:ty => $iter_method:ident),* $(,)?) => {
         $(
             paste::paste! {
                 fn [<append_array_ $short_name>](&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
                     let array_builder = builder
                         .as_any_mut()
-                        .downcast_mut::<$list_type<$builder_type>>()
+                        .downcast_mut::<FixedSizeListBuilder<$builder_type>>()
                         .unwrap();
-                    
+
                     for value in values.$iter_method() {
                         array_builder.values().append_value(*value);
                     }
@@ -299,11 +336,11 @@ macro_rules! impl_append_array_typed {
 }
 
 /// Macro to generate type-specific append methods for primitive types.
-/// 
+///
 /// This macro generates methods that append a single primitive value
 /// to the corresponding Arrow builder. Each generated method is specialized
 /// for a specific primitive type.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
@@ -358,17 +395,17 @@ impl<'a> RecordBatchBuilder<'a> {
 
     // Generate type-specific array append methods
     impl_append_array_typed! {
-        bool => BooleanBuilder => bool => iter_bool => FixedSizeListBuilder,
-        f32 => Float32Builder => f32 => iter_f32 => FixedSizeListBuilder,
-        f64 => Float64Builder => f64 => iter_f64 => FixedSizeListBuilder,
-        i8 => Int8Builder => i8 => iter_i8 => FixedSizeListBuilder,
-        u8 => UInt8Builder => u8 => iter_u8 => FixedSizeListBuilder,
-        i16 => Int16Builder => i16 => iter_i16 => FixedSizeListBuilder,
-        u16 => UInt16Builder => u16 => iter_u16 => FixedSizeListBuilder,
-        i32 => Int32Builder => i32 => iter_i32 => FixedSizeListBuilder,
-        u32 => UInt32Builder => u32 => iter_u32 => FixedSizeListBuilder,
-        i64 => Int64Builder => i64 => iter_i64 => FixedSizeListBuilder,
-        u64 => UInt64Builder => u64 => iter_u64 => FixedSizeListBuilder,
+        bool => BooleanBuilder => bool => iter_bool,
+        f32 => Float32Builder => f32 => iter_f32,
+        f64 => Float64Builder => f64 => iter_f64,
+        i8 => Int8Builder => i8 => iter_i8,
+        u8 => UInt8Builder => u8 => iter_u8,
+        i16 => Int16Builder => i16 => iter_i16,
+        u16 => UInt16Builder => u16 => iter_u16,
+        i32 => Int32Builder => i32 => iter_i32,
+        u32 => UInt32Builder => u32 => iter_u32,
+        i64 => Int64Builder => i64 => iter_i64,
+        u64 => UInt64Builder => u64 => iter_u64,
     }
 
     fn append_array_string(&self, builder: &mut dyn ArrayBuilder, values: &[BaseValue]) {
@@ -381,7 +418,6 @@ impl<'a> RecordBatchBuilder<'a> {
         }
         array_builder.append(true);
     }
-
 
     // Generate type-specific primitive append methods
     impl_append_primitive_typed! {
@@ -400,7 +436,6 @@ impl<'a> RecordBatchBuilder<'a> {
         u64 => UInt64Builder => u64,
         string => StringBuilder => &str,
     }
-
 
     pub fn build(&self, name: &str) -> Result<RecordBatch> {
         let schema = self
@@ -427,7 +462,6 @@ impl<'a> RecordBatchBuilder<'a> {
 
         RecordBatch::try_new(schema.clone(), arrays).context("Failed to create RecordBatch")
     }
-
 
     fn append_value(&self, builder: &mut dyn ArrayBuilder, value: &FieldValue) {
         match value {
@@ -565,15 +599,14 @@ impl<'a> RecordBatchBuilder<'a> {
             PrimitiveValue::String(value) => self.append_primitive_string(builder, value),
         }
     }
-
 }
 
 /// Macro to generate type-specific parse methods for CDR sequence types.
-/// 
+///
 /// This macro generates methods that parse CDR-encoded sequences and append
 /// them to Arrow ListBuilder instances. Each method handles the CDR header,
 /// deserializes values, and appends them to the builder.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
@@ -605,11 +638,11 @@ macro_rules! impl_parse_sequence_typed {
 }
 
 /// Macro to generate type-specific parse methods for CDR fixed-size array types.
-/// 
+///
 /// This macro generates methods that parse CDR-encoded fixed-size arrays and
 /// append them to Arrow FixedSizeListBuilder instances. Each method deserializes
 /// a fixed number of values and appends them to the builder.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
@@ -638,11 +671,11 @@ macro_rules! impl_parse_array_typed {
 }
 
 /// Macro to generate type-specific parse methods for CDR primitive types.
-/// 
+///
 /// This macro generates methods that parse CDR-encoded primitive values and
 /// append them to the corresponding Arrow builder. Each method deserializes
 /// a single value and appends it to the builder.
-/// 
+///
 /// # Parameters
 /// - `$short_name`: Short name for the type (e.g., bool, f32)
 /// - `$builder_type`: Arrow builder type (e.g., BooleanBuilder)
@@ -760,8 +793,6 @@ impl<'a> CdrArrowParser<'a> {
         string => StringBuilder => String,
     }
 
-
-
     pub fn parse(&mut self, name: String, data: &[u8]) {
         self.byte_order = if data[1] == 0x00 {
             Endianness::BigEndian
@@ -823,10 +854,8 @@ impl<'a> CdrArrowParser<'a> {
                 Primitive::Int64 => self.parse_array_i64(array_builder, data, length),
                 Primitive::UInt64 => self.parse_array_u64(array_builder, data, length),
                 Primitive::String => {
-                    let string_builder = array_builder
-                        .as_any_mut()
-                        .downcast_mut::<FixedSizeListBuilder<StringBuilder>>()
-                        .unwrap();
+                    let string_builder =
+                        downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
                     for _i in 0..*length as usize {
                         string_builder
                             .values()
@@ -836,10 +865,8 @@ impl<'a> CdrArrowParser<'a> {
                 }
             },
             BaseType::Complex(name) => {
-                let substruct_builder = array_builder
-                    .as_any_mut()
-                    .downcast_mut::<FixedSizeListBuilder<StructBuilder>>()
-                    .unwrap();
+                let substruct_builder =
+                    downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
 
                 for i in 0..*length as usize {
                     self.parse_complex(name, data, substruct_builder);
@@ -883,8 +910,7 @@ impl<'a> CdrArrowParser<'a> {
                         Endianness::LittleEndian => LittleEndian::read_u32(header),
                     };
 
-                    let string_builder =
-                        downcast_list_builder::<StringBuilder>(array_builder);
+                    let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
                     for _i in 0..length as usize {
                         string_builder
                             .values()
