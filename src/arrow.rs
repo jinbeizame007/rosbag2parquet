@@ -616,12 +616,7 @@ macro_rules! impl_parse_sequence_typed {
         $(
             paste::paste! {
                 fn [<parse_sequence_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8]) {
-                    self.align_to(4);
-                    let header = self.next_bytes(data, 4);
-                    let length = match self.byte_order {
-                        Endianness::BigEndian => BigEndian::read_u32(header),
-                        Endianness::LittleEndian => LittleEndian::read_u32(header),
-                    };
+                    let length = self.read_length_from_header(data);
 
                     let mut values = Vec::<$value_type>::with_capacity(length as usize);
                     for _i in 0..length as usize {
@@ -743,6 +738,16 @@ impl<'a> CdrArrowParser<'a> {
     fn next_bytes<'b>(&mut self, data: &'b [u8], count: usize) -> &'b [u8] {
         self.position += count;
         &data[self.position - count..self.position]
+    }
+
+    #[inline]
+    fn read_length_from_header(&mut self, data: &[u8]) -> u32 {
+        self.align_to(4);
+        let header = self.next_bytes(data, 4);
+        match self.byte_order {
+            Endianness::BigEndian => BigEndian::read_u32(header),
+            Endianness::LittleEndian => LittleEndian::read_u32(header),
+        }
     }
 
     // Generate type-specific sequence append methods
@@ -903,12 +908,7 @@ impl<'a> CdrArrowParser<'a> {
                 Primitive::Int64 => self.parse_sequence_i64(array_builder, data),
                 Primitive::UInt64 => self.parse_sequence_u64(array_builder, data),
                 Primitive::String => {
-                    self.align_to(4);
-                    let header = self.next_bytes(data, 4);
-                    let length = match self.byte_order {
-                        Endianness::BigEndian => BigEndian::read_u32(header),
-                        Endianness::LittleEndian => LittleEndian::read_u32(header),
-                    };
+                    let length = self.read_length_from_header(data);
 
                     let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
                     for _i in 0..length as usize {
@@ -920,12 +920,7 @@ impl<'a> CdrArrowParser<'a> {
                 }
             },
             BaseType::Complex(name) => {
-                self.align_to(4);
-                let header = self.next_bytes(data, 4);
-                let length = match self.byte_order {
-                    Endianness::BigEndian => BigEndian::read_u32(header),
-                    Endianness::LittleEndian => LittleEndian::read_u32(header),
-                };
+                let length = self.read_length_from_header(data);
 
                 let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
                 let substruct_builder = list_builder
