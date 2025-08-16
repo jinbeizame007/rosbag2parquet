@@ -258,13 +258,13 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     }
 }
 
-pub struct CdrArrowParser<'a, 'b> {
+pub struct CdrArrowParser<'a> {
     array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
 }
 
-impl<'a, 'b> CdrArrowParser<'a, 'b> {
+impl<'a> CdrArrowParser<'a> {
     pub fn new(
         msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
         schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
