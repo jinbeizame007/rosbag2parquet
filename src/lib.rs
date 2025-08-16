@@ -15,8 +15,8 @@ use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
-use crate::cdr::CdrRosParser;
-use crate::core::extract_message_type;
+use crate::ros::CdrRosParser;
+use crate::ros::extract_message_type;
 use crate::ros::Message;
 
 pub use cdr::Endianness;

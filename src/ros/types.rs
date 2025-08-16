@@ -5,14 +5,13 @@ use std::collections::HashMap;
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::{alpha1, alphanumeric1},
     combinator::{map, recognize},
     multi::many0,
     sequence::pair,
     IResult, Parser,
 };
 
-use crate::core::extract_message_type;
+use super::core::{extract_message_type, is_constant_line, identifier};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageDefinition<'a> {
@@ -69,107 +68,7 @@ pub enum Primitive {
     String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Message {
-    pub name: String,
-    pub value: Vec<Field>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Field {
-    pub name: String,
-    pub value: FieldValue,
-}
-
-impl Field {
-    pub fn new(name: String, value: FieldValue) -> Field {
-        Field { name, value }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum FieldValue {
-    Base(BaseValue),
-    Array(Vec<BaseValue>),
-    Sequence(Vec<BaseValue>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum BaseValue {
-    Primitive(PrimitiveValue),
-    Complex(Message),
-}
-
-macro_rules! impl_iter_primitive {
-    ($($method_name:ident => $rust_type:ty => $variant:ident),* $(,)?) => {
-        $(
-            fn $method_name(&self) -> impl Iterator<Item = &$rust_type> {
-                self.iter().filter_map(|base_value| match base_value {
-                    BaseValue::Primitive(PrimitiveValue::$variant(value)) => Some(value),
-                    _ => unreachable!(),
-                })
-            }
-        )*
-    };
-}
-
-pub trait BaseValueSliceExt {
-    fn iter_bool(&self) -> impl Iterator<Item = &bool>;
-    fn iter_f32(&self) -> impl Iterator<Item = &f32>;
-    fn iter_f64(&self) -> impl Iterator<Item = &f64>;
-    fn iter_i8(&self) -> impl Iterator<Item = &i8>;
-    fn iter_i16(&self) -> impl Iterator<Item = &i16>;
-    fn iter_i32(&self) -> impl Iterator<Item = &i32>;
-    fn iter_i64(&self) -> impl Iterator<Item = &i64>;
-    fn iter_u8(&self) -> impl Iterator<Item = &u8>;
-    fn iter_u16(&self) -> impl Iterator<Item = &u16>;
-    fn iter_u32(&self) -> impl Iterator<Item = &u32>;
-    fn iter_u64(&self) -> impl Iterator<Item = &u64>;
-    fn iter_string(&self) -> impl Iterator<Item = &String>;
-    fn iter_complex(&self) -> impl Iterator<Item = &Message>;
-}
-
-impl BaseValueSliceExt for [BaseValue] {
-    impl_iter_primitive! {
-        iter_bool => bool => Bool,
-        iter_f32 => f32 => Float32,
-        iter_f64 => f64 => Float64,
-        iter_i8 => i8 => Int8,
-        iter_i16 => i16 => Int16,
-        iter_i32 => i32 => Int32,
-        iter_i64 => i64 => Int64,
-        iter_u8 => u8 => UInt8,
-        iter_u16 => u16 => UInt16,
-        iter_u32 => u32 => UInt32,
-        iter_u64 => u64 => UInt64,
-        iter_string => String => String,
-    }
-
-    fn iter_complex(&self) -> impl Iterator<Item = &Message> {
-        self.iter().filter_map(|base_value| match base_value {
-            BaseValue::Complex(message) => Some(message),
-            _ => unreachable!(),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PrimitiveValue {
-    Bool(bool),
-    Byte(u8),
-    Char(char),
-    Float32(f32),
-    Float64(f64),
-    Int8(i8),
-    UInt8(u8),
-    Int16(i16),
-    UInt16(u16),
-    Int32(i32),
-    UInt32(u32),
-    Int64(i64),
-    UInt64(u64),
-    String(String),
-}
+// Runtime data types are now in data.rs
 
 #[derive(Debug, Clone)]
 pub struct SchemaSection<'a> {
@@ -269,9 +168,6 @@ pub fn parse_msg_definition_from_schema_section<'a>(
     }
 }
 
-fn is_constant_line(line: &str) -> bool {
-    line.contains("=") && !line.contains("[")
-}
 
 pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
     if input.ends_with("[]") {
@@ -329,14 +225,11 @@ pub fn primitive_type(input: &str) -> IResult<&str, Primitive> {
 
 /// ROSの識別子（フィールド名、パッケージ名など）を認識する
 /// 仕様: [a-zA-Z]で始まり、英数字とアンダースコアが続く [2]
-pub fn identifier(input: &str) -> IResult<&str, &str> {
-    let mut parser = recognize(pair(alpha1, many0(alt((alphanumeric1, tag("_"))))));
-    parser.parse(input)
-}
 
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
+    use super::super::data::{Message, Field, FieldValue, BaseValue, PrimitiveValue};
 
     // Helper builder for creating field definitions
     pub struct FieldDefBuilder;
@@ -609,7 +502,7 @@ mod tests {
     #[test]
     fn test_parse_schema_sections_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
-        let schema_text = include_str!("../testdata/schema/vector3d.txt");
+        let schema_text = include_str!("../../testdata/schema/vector3d.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].type_name, schema_name);
@@ -621,7 +514,7 @@ mod tests {
     #[test]
     fn test_parse_schema_sections_multiple_sections() {
         let schema_name = "sensor_msgs/msg/JointState";
-        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+        let schema_text = include_str!("../../testdata/schema/joint_state.txt");
 
         let sections = parse_schema_sections(schema_name, schema_text);
 
@@ -691,7 +584,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
-        let schema_text = include_str!("../testdata/schema/vector3d.txt");
+        let schema_text = include_str!("../../testdata/schema/vector3d.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
@@ -706,7 +599,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_multiple_sections() {
         let schema_name = "geometry_msgs/msg/TwistStamped";
-        let schema_text = include_str!("../testdata/schema/twist_stamped.txt");
+        let schema_text = include_str!("../../testdata/schema/twist_stamped.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
@@ -767,7 +660,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_joint_state() {
         let schema_name = "sensor_msgs/msg/JointState";
-        let schema_text = include_str!("../testdata/schema/joint_state.txt");
+        let schema_text = include_str!("../../testdata/schema/joint_state.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
