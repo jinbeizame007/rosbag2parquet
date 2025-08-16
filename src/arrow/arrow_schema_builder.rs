@@ -52,18 +52,17 @@ impl<'a> ArrowSchemaBuilder<'a> {
 
     fn ros_array_type_to_arrow_data_type(&self, data_type: &BaseType, length: u32) -> DataType {
         let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
-        let array_arrow_type = DataType::FixedSizeList(
+
+        DataType::FixedSizeList(
             Arc::new(Field::new("item", base_arrow_type, true)),
             length as i32,
-        );
-        array_arrow_type
+        )
     }
 
     fn ros_sequence_type_to_arrow_data_type(&self, data_type: &BaseType) -> DataType {
         let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
-        let sequence_arrow_type =
-            DataType::List(Arc::new(Field::new("item", base_arrow_type, true)));
-        sequence_arrow_type
+
+        DataType::List(Arc::new(Field::new("item", base_arrow_type, true)))
     }
 
     fn ros_base_type_to_arrow_data_type(&self, base_type: &BaseType) -> DataType {

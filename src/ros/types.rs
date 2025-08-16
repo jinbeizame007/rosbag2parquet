@@ -11,7 +11,7 @@ use nom::{
     IResult, Parser,
 };
 
-use super::core::{extract_message_type, is_constant_line, identifier};
+use super::core::{extract_message_type, identifier, is_constant_line};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageDefinition<'a> {
@@ -168,7 +168,6 @@ pub fn parse_msg_definition_from_schema_section<'a>(
     }
 }
 
-
 pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
     if input.ends_with("[]") {
         let (rest, data_type) = non_array_ros_data_type(input.split_at(input.len() - 2).0)?;
@@ -223,13 +222,10 @@ pub fn primitive_type(input: &str) -> IResult<&str, Primitive> {
     parser.parse(input)
 }
 
-/// ROSの識別子（フィールド名、パッケージ名など）を認識する
-/// 仕様: [a-zA-Z]で始まり、英数字とアンダースコアが続く [2]
-
 #[cfg(test)]
 pub mod test_helpers {
+    use super::super::data::{BaseValue, Field, FieldValue, Message, PrimitiveValue};
     use super::*;
-    use super::super::data::{Message, Field, FieldValue, BaseValue, PrimitiveValue};
 
     // Helper builder for creating field definitions
     pub struct FieldDefBuilder;

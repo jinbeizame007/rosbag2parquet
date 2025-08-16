@@ -2,9 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::cdr::CdrDeserializer;
 use super::data::{BaseValue, Field, FieldValue, Message, PrimitiveValue};
 use super::types::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
+use crate::cdr::CdrDeserializer;
 
 pub struct SingleMessageCdrRosParser<'a> {
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,

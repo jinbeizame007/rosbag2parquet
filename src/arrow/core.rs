@@ -78,6 +78,7 @@ pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     }
 }
 
+#[allow(dead_code)]
 pub fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
     let any = builder.as_any_mut();
     if any.is::<ListBuilder<BooleanBuilder>>() {

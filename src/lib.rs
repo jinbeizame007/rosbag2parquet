@@ -15,8 +15,8 @@ use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
-use crate::ros::CdrRosParser;
 use crate::ros::extract_message_type;
+use crate::ros::CdrRosParser;
 use crate::ros::Message;
 
 pub use cdr::Endianness;
@@ -27,8 +27,7 @@ pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
     let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
 
     for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             let _schema_name = schema.name.clone();
@@ -55,14 +54,13 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let max_message_count = 10;
     let mut message_count = 0;
     for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
-            if !type_registry.contains_key(&type_name) {
-                type_registry.insert(type_name, schema.data.clone());
-            }
+            type_registry
+                .entry(type_name)
+                .or_insert_with(|| schema.data.clone());
 
             message_count += 1;
             if message_count >= max_message_count {
@@ -87,8 +85,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     message_count = 0;
     let mut cdr_ros_parser = CdrRosParser::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
@@ -117,8 +114,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             if let Some(ref filter) = topic_filter {
@@ -128,9 +124,9 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
-            if !type_registry.contains_key(&type_name) {
-                type_registry.insert(type_name, schema.data.clone());
-            }
+            type_registry
+                .entry(type_name)
+                .or_insert_with(|| schema.data.clone());
         }
     }
 
@@ -151,8 +147,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
 
     let mut parser = CdrArrowParser::new(&msg_definition_table, &mut schemas);
     for (index, message_result) in message_stream.enumerate() {
-        let message =
-            message_result.with_context(|| format!("Failed to read message {}", index))?;
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             if let Some(ref filter) = topic_filter {
@@ -233,8 +228,7 @@ mod tests {
         assert_eq!(
             *column.as_ref(),
             *Arc::new(expected).as_ref(),
-            "Field '{}' values don't match",
-            field_name
+            "Field '{field_name}' values don't match"
         );
     }
 
@@ -258,8 +252,7 @@ mod tests {
         assert_eq!(
             *column.as_ref(),
             *Arc::new(expected).as_ref(),
-            "Column '{}' values don't match",
-            column_name
+            "Column '{column_name}' values don't match"
         );
     }
 
@@ -293,8 +286,7 @@ mod tests {
             });
         assert_eq!(
             actual, &expected,
-            "FixedSizeListArray '{}' values don't match",
-            column_name
+            "FixedSizeListArray '{column_name}' values don't match"
         );
     }
 
@@ -324,8 +316,7 @@ mod tests {
             });
         assert_eq!(
             actual, &expected,
-            "ListArray '{}' values don't match",
-            column_name
+            "ListArray '{column_name}' values don't match"
         );
     }
 
@@ -699,7 +690,7 @@ mod tests {
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
         let test_path = "rosbags/large2/large2.mcap";
-        let record_batches = rosbag2record_batches(test_path, Some(topic_names)).unwrap();
+        let _record_batches = rosbag2record_batches(test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
         // write_record_batches_to_parquet(record_batches, "rosbags/large2");
