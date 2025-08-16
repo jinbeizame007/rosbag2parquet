@@ -262,7 +262,6 @@ pub struct CdrArrowParser<'a, 'b> {
     array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
-    cdr_deserializer: CdrDeserializer<'b>,
 }
 
 impl<'a, 'b> CdrArrowParser<'a, 'b> {
@@ -283,13 +282,11 @@ impl<'a, 'b> CdrArrowParser<'a, 'b> {
                 )
             })
             .collect::<HashMap<String, Vec<Box<dyn ArrayBuilder>>>>();
-        let cdr_deserializer = CdrDeserializer::default();
 
         Self {
             array_builders_table,
             msg_definition_table,
             schemas,
-            cdr_deserializer,
         }
     }
 
