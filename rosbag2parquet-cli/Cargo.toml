@@ -1,0 +1,13 @@
+[package]
+name = "rosbag2parquet-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rosbag2parquet"
+path = "src/main.rs"
+
+[dependencies]
+rosbag2parquet = { path = "../rosbag2parquet" }
+clap = { version = "4.5", features = ["derive"] }
+camino = "1.1"
