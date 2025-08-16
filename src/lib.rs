@@ -22,9 +22,10 @@ use crate::ros::Message;
 pub use cdr::Endianness;
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
-pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P, topic_filter: Option<HashSet<String>>) {
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: Option<HashSet<String>>) {
     let record_batches = rosbag2record_batches(path, topic_filter).unwrap();
-    write_record_batches_to_parquet(record_batches, "rosbags/large2");
+    let output_dir = path.as_ref().parent().unwrap().join("parquet");
+    write_record_batches_to_parquet(record_batches, output_dir);
 }
 
 pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
@@ -87,7 +88,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
 }
 
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
-    path: P,
+    path: &P,
     topic_filter: Option<HashSet<String>>,
 ) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
@@ -159,13 +160,12 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
     record_batches: HashMap<String, RecordBatch>,
     path: P,
 ) {
-    let path = path.as_ref().join("parquet");
-    if !path.exists() {
-        fs::create_dir_all(&path).unwrap();
+    if !path.as_ref().exists() {
+        fs::create_dir_all(path.as_ref()).unwrap();
     }
 
     for (name, record_batch) in record_batches {
-        let file = std::fs::File::create(format!("{}/{}.parquet", &path, name)).unwrap();
+        let file = std::fs::File::create(format!("{}/{}.parquet", path.as_ref(), name)).unwrap();
         let props = parquet::file::properties::WriterProperties::builder()
             .set_compression(parquet::basic::Compression::SNAPPY)
             .build();
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser() {
         let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         println!("keys: {:?}", record_batches.keys());
 
@@ -465,13 +465,13 @@ mod tests {
             StringArray::from(vec!["Hello, World!"]),
         );
 
-        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs");
+        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs/parquet");
     }
 
     #[test]
     fn test_cdr_arrow_parser_array() {
         let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         let imu_batch = record_batches.get("Imu").unwrap();
 
@@ -674,7 +674,7 @@ mod tests {
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
         let test_path = "rosbags/large2/large2.mcap";
-        let _record_batches = rosbag2record_batches(test_path, Some(topic_names)).unwrap();
+        let _record_batches = rosbag2record_batches(&test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
         // write_record_batches_to_parquet(record_batches, "rosbags/large2");
