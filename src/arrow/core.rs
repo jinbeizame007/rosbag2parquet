@@ -161,12 +161,12 @@ macro_rules! impl_parse_sequence_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_sequence_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8]) {
-                    let length = self.read_length_from_header(data);
+                fn [<parse_sequence_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) {
+                    let length = self.cdr_deserializer.read_sequence_length();
 
                     let mut values = Vec::<$value_type>::with_capacity(length as usize);
                     for _i in 0..length as usize {
-                        values.push(self.[<deserialize_$short_name>](data));
+                        values.push(self.cdr_deserializer.[<deserialize_$short_name>]());
                     }
 
                     let list_builder = $crate::arrow::core::downcast_list_builder::<$builder_type>(builder);
@@ -182,10 +182,10 @@ macro_rules! impl_parse_array_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, data: &[u8], length: &u32) {
+                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, length: &u32) {
                     let mut values = Vec::<$value_type>::with_capacity(*length as usize);
                     for _i in 0..*length as usize {
-                        values.push(self.[<deserialize_ $short_name>](data));
+                        values.push(self.cdr_deserializer.[<deserialize_ $short_name>]());
                     }
 
                     let array_builder = builder
@@ -204,11 +204,11 @@ macro_rules! impl_parse_primitive_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_ $short_name>](&mut self, data: &[u8], builder: &mut dyn ArrayBuilder) {
+                fn [<parse_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) {
                     let typed_builder = builder.as_any_mut()
                         .downcast_mut::<$builder_type>()
                         .unwrap();
-                    typed_builder.append_value(self.[<deserialize_ $short_name>](data));
+                    typed_builder.append_value(self.cdr_deserializer.[<deserialize_ $short_name>]());
                 }
             }
         )*
