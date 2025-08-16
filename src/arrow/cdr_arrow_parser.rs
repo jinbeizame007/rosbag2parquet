@@ -3,19 +3,18 @@ use std::sync::Arc;
 
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
-    Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
+    Int16Builder, Int32Builder, Int64Builder, Int8Builder, StringBuilder,
     StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
 use arrow::datatypes::Schema;
 use arrow_array::RecordBatch;
-use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
 use crate::arrow::core::{
-    append_empty_list_builder, create_array_builder, downcast_fixed_size_list_builder,
+    create_array_builder, downcast_fixed_size_list_builder,
     downcast_list_builder, impl_parse_array_typed, impl_parse_primitive_typed,
     impl_parse_sequence_typed,
 };
-use crate::cdr::{CdrDeserializer, Endianness};
+use crate::cdr::CdrDeserializer;
 use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
 
 pub struct CdrArrowParser<'a> {
