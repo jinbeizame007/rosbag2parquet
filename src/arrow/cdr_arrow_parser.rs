@@ -18,6 +18,70 @@ use crate::arrow::core::{
 use crate::cdr::{CdrDeserializer, Endianness};
 use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
 
+pub struct CdrArrowParser<'a> {
+    array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
+    msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
+    schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
+}
+
+impl<'a> CdrArrowParser<'a> {
+    pub fn new(
+        msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
+        schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
+    ) -> Self {
+        let array_builders_table = schemas
+            .iter()
+            .map(|(name, schema)| {
+                (
+                    name.to_string(),
+                    schema
+                        .fields()
+                        .iter()
+                        .map(|field| create_array_builder(field.data_type()))
+                        .collect::<Vec<Box<dyn ArrayBuilder>>>(),
+                )
+            })
+            .collect::<HashMap<String, Vec<Box<dyn ArrayBuilder>>>>();
+
+        Self {
+            array_builders_table,
+            msg_definition_table,
+            schemas,
+        }
+    }
+
+    pub fn parse(&mut self, name: String, data: &[u8]) {
+        let mut single_message_parser = SingleMessageCdrArrowParser::new(
+            &mut self.array_builders_table,
+            self.msg_definition_table,
+            name,
+            data,
+        );
+        single_message_parser.parse();
+    }
+
+    pub fn finish(&mut self) -> HashMap<String, RecordBatch> {
+        let mut batches = HashMap::new();
+        let keys = self
+            .array_builders_table
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>();
+        for name in keys {
+            let schema = self.schemas.remove(name.as_str()).unwrap();
+            let mut builders = self.array_builders_table.remove(&name).unwrap();
+            let built_array = builders
+                .iter_mut()
+                .map(|builder| builder.finish())
+                .collect::<Vec<_>>();
+            let batch = RecordBatch::try_new(schema, built_array);
+            batches.insert(name.to_string(), batch.unwrap());
+        }
+
+        batches
+    }
+}
+
 pub struct SingleMessageCdrArrowParser<'a> {
     array_builders_table: &'a mut HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
@@ -118,8 +182,8 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
                 Primitive::Bool => self.parse_array_bool(array_builder, length),
-                Primitive::Byte => todo!(),
-                Primitive::Char => todo!(),
+                Primitive::Byte => self.parse_array_u8(array_builder, length),
+                Primitive::Char => self.parse_array_char(array_builder, length),
                 Primitive::Float32 => self.parse_array_f32(array_builder, length),
                 Primitive::Float64 => self.parse_array_f64(array_builder, length),
                 Primitive::Int8 => self.parse_array_i8(array_builder, length),
@@ -134,6 +198,16 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             },
             BaseType::Complex(name) => self.parse_array_complex(array_builder, name, length),
         }
+    }
+
+    fn parse_array_char(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) {
+        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        for _ in 0..*length as usize {
+            string_builder
+                .values()
+                .append_value(self.cdr_deserializer.deserialize_char().to_string());
+        }
+        string_builder.append(true);
     }
 
     fn parse_array_string(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) {
@@ -164,8 +238,8 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
                 Primitive::Bool => self.parse_sequence_bool(array_builder),
-                Primitive::Byte => todo!(),
-                Primitive::Char => todo!(),
+                Primitive::Byte => self.parse_sequence_u8(array_builder),
+                Primitive::Char => self.parse_sequence_char(array_builder),
                 Primitive::Float32 => self.parse_sequence_f32(array_builder),
                 Primitive::Float64 => self.parse_sequence_f64(array_builder),
                 Primitive::Int8 => self.parse_sequence_i8(array_builder),
@@ -180,6 +254,18 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             },
             BaseType::Complex(name) => self.parse_sequence_complex(array_builder, name),
         }
+    }
+
+    fn parse_sequence_char(&mut self, array_builder: &mut dyn ArrayBuilder) {
+        let length = self.cdr_deserializer.read_sequence_length();
+
+        let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
+        for _ in 0..length as usize {
+            string_builder
+                .values()
+                .append_value(self.cdr_deserializer.deserialize_char().to_string());
+        }
+        string_builder.append(true);
     }
 
     fn parse_sequence_string(&mut self, array_builder: &mut dyn ArrayBuilder) {
@@ -241,8 +327,8 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     fn parse_primitive(&mut self, primitive: &Primitive, array_builder: &mut dyn ArrayBuilder) {
         match primitive {
             Primitive::Bool => self.parse_bool(array_builder),
-            Primitive::Byte => todo!(),
-            Primitive::Char => todo!(),
+            Primitive::Byte => self.parse_u8(array_builder),
+            Primitive::Char => self.parse_char(array_builder),
             Primitive::Float32 => self.parse_f32(array_builder),
             Primitive::Float64 => self.parse_f64(array_builder),
             Primitive::Int8 => self.parse_i8(array_builder),
@@ -256,68 +342,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             Primitive::String => self.parse_string(array_builder),
         }
     }
-}
 
-pub struct CdrArrowParser<'a> {
-    array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
-    msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
-    schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
-}
-
-impl<'a> CdrArrowParser<'a> {
-    pub fn new(
-        msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
-        schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
-    ) -> Self {
-        let array_builders_table = schemas
-            .iter()
-            .map(|(name, schema)| {
-                (
-                    name.to_string(),
-                    schema
-                        .fields()
-                        .iter()
-                        .map(|field| create_array_builder(field.data_type()))
-                        .collect::<Vec<Box<dyn ArrayBuilder>>>(),
-                )
-            })
-            .collect::<HashMap<String, Vec<Box<dyn ArrayBuilder>>>>();
-
-        Self {
-            array_builders_table,
-            msg_definition_table,
-            schemas,
-        }
-    }
-
-    pub fn parse(&mut self, name: String, data: &[u8]) {
-        let mut single_message_parser = SingleMessageCdrArrowParser::new(
-            &mut self.array_builders_table,
-            self.msg_definition_table,
-            name,
-            data,
-        );
-        single_message_parser.parse();
-    }
-
-    pub fn finish(&mut self) -> HashMap<String, RecordBatch> {
-        let mut batches = HashMap::new();
-        let keys = self
-            .array_builders_table
-            .keys()
-            .cloned()
-            .collect::<Vec<_>>();
-        for name in keys {
-            let schema = self.schemas.remove(name.as_str()).unwrap();
-            let mut builders = self.array_builders_table.remove(&name).unwrap();
-            let built_array = builders
-                .iter_mut()
-                .map(|builder| builder.finish())
-                .collect::<Vec<_>>();
-            let batch = RecordBatch::try_new(schema, built_array);
-            batches.insert(name.to_string(), batch.unwrap());
-        }
-
-        batches
+    fn parse_char(&mut self, array_builder: &mut dyn ArrayBuilder) {
+        let byte_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        byte_builder
+            .values()
+            .append_value(self.cdr_deserializer.deserialize_char().to_string());
     }
 }
