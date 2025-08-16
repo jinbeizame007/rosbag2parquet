@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_rosbag2ros_msg_values() {
-        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let test_path = "../rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let ros_msg_values = rosbag2ros_msg_values(test_path)
             .expect("Failed to parse ROS messages from test MCAP file");
 
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_rosbag2ros_msg_values_array() {
-        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
+        let test_path = "../rosbags/array_msgs/array_msgs_0.mcap";
         let ros_msg_values = rosbag2ros_msg_values(test_path)
             .expect("Failed to parse ROS array messages from test MCAP file");
 
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_cdr_arrow_parser() {
-        let test_path = "rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let test_path = "../rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         println!("keys: {:?}", record_batches.keys());
@@ -465,12 +465,12 @@ mod tests {
             StringArray::from(vec!["Hello, World!"]),
         );
 
-        write_record_batches_to_parquet(record_batches, "rosbags/non_array_msgs/parquet");
+        write_record_batches_to_parquet(record_batches, "../rosbags/non_array_msgs/parquet");
     }
 
     #[test]
     fn test_cdr_arrow_parser_array() {
-        let test_path = "rosbags/array_msgs/array_msgs_0.mcap";
+        let test_path = "../rosbags/array_msgs/array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         let imu_batch = record_batches.get("Imu").unwrap();
@@ -653,7 +653,7 @@ mod tests {
         ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        write_record_batches_to_parquet(record_batches, "rosbags/array_msgs");
+        write_record_batches_to_parquet(record_batches, "../rosbags/array_msgs");
     }
 
     #[test]
@@ -673,10 +673,10 @@ mod tests {
         // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());
         // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
 
-        let test_path = "rosbags/large2/large2.mcap";
+        let test_path = "../rosbags/large2/large2.mcap";
         let _record_batches = rosbag2record_batches(&test_path, Some(topic_names)).unwrap();
         // let record_batches =
         //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-        // write_record_batches_to_parquet(record_batches, "rosbags/large2");
+        // write_record_batches_to_parquet(record_batches, "../rosbags/large2");
     }
 }

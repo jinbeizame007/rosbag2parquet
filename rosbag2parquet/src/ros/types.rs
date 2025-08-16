@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn test_parse_schema_sections_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
-        let schema_text = include_str!("../../testdata/schema/vector3d.txt");
+        let schema_text = include_str!("../../../testdata/schema/vector3d.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         assert_eq!(sections.len(), 1);
         assert_eq!(sections[0].type_name, schema_name);
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn test_parse_schema_sections_multiple_sections() {
         let schema_name = "sensor_msgs/msg/JointState";
-        let schema_text = include_str!("../../testdata/schema/joint_state.txt");
+        let schema_text = include_str!("../../../testdata/schema/joint_state.txt");
 
         let sections = parse_schema_sections(schema_name, schema_text);
 
@@ -580,7 +580,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_single_section() {
         let schema_name = "geometry_msgs/msg/Vector3";
-        let schema_text = include_str!("../../testdata/schema/vector3d.txt");
+        let schema_text = include_str!("../../../testdata/schema/vector3d.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
@@ -595,7 +595,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_multiple_sections() {
         let schema_name = "geometry_msgs/msg/TwistStamped";
-        let schema_text = include_str!("../../testdata/schema/twist_stamped.txt");
+        let schema_text = include_str!("../../../testdata/schema/twist_stamped.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn test_parse_msg_definition_from_schema_section_joint_state() {
         let schema_name = "sensor_msgs/msg/JointState";
-        let schema_text = include_str!("../../testdata/schema/joint_state.txt");
+        let schema_text = include_str!("../../../testdata/schema/joint_state.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
         parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
