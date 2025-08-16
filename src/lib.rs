@@ -22,25 +22,9 @@ use crate::ros::Message;
 pub use cdr::Endianness;
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
-pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P) -> Result<()> {
-    let mmap = read_mcap(path)?;
-    let message_stream = MessageStream::new(&mmap).context("Failed to create message stream")?;
-
-    for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
-
-        if let Some(schema) = &message.channel.schema {
-            let _schema_name = schema.name.clone();
-            let schema_data = schema.data.clone();
-
-            let _schema_text = std::str::from_utf8(&schema_data)?;
-            // println!("Schema: {} ({})", schema_name, schema_text);
-            // println!();
-            // println!();
-        }
-    }
-
-    Ok(())
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: P, topic_filter: Option<HashSet<String>>) {
+    let record_batches = rosbag2record_batches(path, topic_filter).unwrap();
+    write_record_batches_to_parquet(record_batches, "rosbags/large2");
 }
 
 pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
