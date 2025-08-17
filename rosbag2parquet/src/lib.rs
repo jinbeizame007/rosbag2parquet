@@ -107,6 +107,9 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
                     continue;
                 }
             }
+            if schema.data.is_empty() {
+                continue;
+            }
 
             let type_name = extract_message_type(&schema.name).to_string();
             type_registry
@@ -142,6 +145,9 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
+            if schema.data.is_empty() {
+                continue;
+            }
             parser.parse(type_name, &message.data);
         }
     }
@@ -413,7 +419,7 @@ mod tests {
         };
         expected_ros_msg_values.push(joint_state_msg_value);
 
-        // assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
+        assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values[0], expected_ros_msg_values[0]);
     }
 
@@ -421,8 +427,6 @@ mod tests {
     fn test_cdr_arrow_parser() {
         let test_path = "../rosbags/non_array_msgs/non_array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
-
-        println!("keys: {:?}", record_batches.keys());
 
         let twist_batch = record_batches
             .get("Twist")
@@ -659,24 +663,8 @@ mod tests {
     #[test]
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
-        topic_names.insert("sensor_msgs/msg/JointState".to_string());
-        // topic_names.insert("geometry_msgs/msg/QuaternionStamped".to_string());
-        // topic_names.insert("sensor_msgs/msg/PointCloud2".to_string());
-        // topic_names.insert("geometry_msgs/msg/PointStamped".to_string());
-        // topic_names.insert("std_msgs/msg/String".to_string());
-        // topic_names.insert("std_msgs/msg/Float64".to_string());
-        // topic_names.insert("geometry_msgs/msg/TwistStamped".to_string());
-        // topic_names.insert("sensor_msgs/msg/Image".to_string());
-        // topic_names.insert("visualization_msgs/msg/MarkerArray".to_string());
-        // topic_names.insert("nav_msgs/msg/OccupancyGrid".to_string());
-        // topic_names.insert("diagnostic_msgs/msg/DiagnosticArray".to_string());
-        // topic_names.insert("diagnostic_msgs/msg/DiagnosticStatus".to_string());
-        // topic_names.insert("tf2_msgs/msg/TFMessage".to_string());
-
-        let test_path = "../rosbags/large2/large2.mcap";
+        topic_names.insert("sensor_msgs/msg/Imu".to_string());
+        let test_path = "../datasets/r3live/hku_park_00/hku_park_00_0.mcap";
         let _record_batches = rosbag2record_batches(&test_path, Some(topic_names)).unwrap();
-        // let record_batches =
-        //     rosbag2record_batches_with_topic_names(test_path, topic_names).unwrap();
-        // write_record_batches_to_parquet(record_batches, "../rosbags/large2");
     }
 }
