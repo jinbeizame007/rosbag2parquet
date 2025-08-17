@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Result;
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 
 use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
 
@@ -22,11 +22,20 @@ impl<'a> ArrowSchemaBuilder<'a> {
             .message_definition_table
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", name))?;
-        let fields: Vec<Field> = message_definition
-            .fields
-            .iter()
-            .map(|field| self.ros_field_to_arrow_field(field))
-            .collect();
+
+        let mut fields = Vec::new();
+        fields.push(Field::new(
+            "timestamp_ns",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            true,
+        ));
+        fields.extend(
+            message_definition
+                .fields
+                .iter()
+                .map(|field| self.ros_field_to_arrow_field(field))
+                .collect::<Vec<_>>(),
+        );
         Ok(Arc::new(Schema::new(fields)))
     }
 

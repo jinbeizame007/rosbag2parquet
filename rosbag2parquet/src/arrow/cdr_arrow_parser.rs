@@ -4,7 +4,7 @@ use std::sync::Arc;
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, StringBuilder, StructBuilder,
-    UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
+    TimestampNanosecondBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
 };
 use arrow::datatypes::Schema;
 use arrow_array::RecordBatch;
@@ -53,7 +53,7 @@ impl<'a> CdrArrowParser<'a> {
         }
     }
 
-    pub fn parse(&mut self, topic_name: String, data: &[u8]) {
+    pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) {
         let type_name = self.topic_name_type_table.get(&topic_name).unwrap();
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
@@ -61,6 +61,7 @@ impl<'a> CdrArrowParser<'a> {
             topic_name.clone(),
             type_name.clone(),
             data,
+            timestamp_ns,
         );
         single_message_parser.parse();
     }
@@ -94,6 +95,7 @@ pub struct SingleMessageCdrArrowParser<'a> {
     cdr_deserializer: CdrDeserializer<'a>,
     topic_name: String,
     type_name: String,
+    timestamp_ns: i64,
 }
 
 impl<'a> SingleMessageCdrArrowParser<'a> {
@@ -103,6 +105,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         topic_name: String,
         type_name: String,
         data: &'a [u8],
+        timestamp_ns: i64,
     ) -> Self {
         Self {
             array_builders_table,
@@ -110,6 +113,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             cdr_deserializer: CdrDeserializer::new(data),
             topic_name,
             type_name,
+            timestamp_ns,
         }
     }
 
@@ -167,7 +171,17 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .unwrap();
         let mut array_builders = self.array_builders_table.remove(&self.topic_name).unwrap();
 
-        for (array_builder, field) in array_builders.iter_mut().zip(msg_definition.fields.iter()) {
+        let timestamp_builder = array_builders[0]
+            .as_any_mut()
+            .downcast_mut::<TimestampNanosecondBuilder>()
+            .unwrap();
+        timestamp_builder.append_value(self.timestamp_ns);
+
+        for (array_builder, field) in array_builders
+            .iter_mut()
+            .skip(1)
+            .zip(msg_definition.fields.iter())
+        {
             self.parse_field(field, array_builder);
         }
 

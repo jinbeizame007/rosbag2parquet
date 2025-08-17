@@ -1,9 +1,10 @@
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, ListBuilder, StringBuilder,
-    StructBuilder, UInt16Builder, UInt32Builder, UInt64Builder, UInt8Builder,
+    StructBuilder, TimestampNanosecondBuilder, UInt16Builder, UInt32Builder, UInt64Builder,
+    UInt8Builder,
 };
-use arrow::datatypes::{DataType, Field, Fields};
+use arrow::datatypes::{DataType, Field, Fields, TimeUnit};
 
 pub fn create_fixed_size_list_builder(field: &Field, length: i32) -> Box<dyn ArrayBuilder> {
     match field.data_type() {
@@ -59,6 +60,10 @@ pub fn create_struct_builder(fields: &Fields) -> StructBuilder {
 
 pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     match data_type {
+        DataType::Timestamp(time_unit, _) => match time_unit {
+            TimeUnit::Nanosecond => Box::new(TimestampNanosecondBuilder::new()),
+            _ => unreachable!(),
+        },
         DataType::Boolean => Box::new(BooleanBuilder::new()),
         DataType::UInt8 => Box::new(UInt8Builder::new()),
         DataType::UInt16 => Box::new(UInt16Builder::new()),

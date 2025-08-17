@@ -36,8 +36,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
-    let max_message_count = 10;
-    let mut message_count = 0;
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
@@ -46,11 +44,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
             type_registry
                 .entry(type_name)
                 .or_insert_with(|| schema.data.clone());
-
-            message_count += 1;
-            if message_count >= max_message_count {
-                break;
-            }
         }
     }
 
@@ -67,7 +60,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
-    message_count = 0;
     let mut cdr_ros_parser = CdrRosParser::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
@@ -76,11 +68,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
             let type_name = extract_message_type(&schema.name).to_string();
             let parsed_message = cdr_ros_parser.parse(&type_name, &message.data);
             parsed_messages.push(parsed_message);
-
-            message_count += 1;
-            if message_count >= max_message_count {
-                break;
-            }
         }
     }
 
@@ -147,7 +134,11 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             if schema.data.is_empty() {
                 continue;
             }
-            parser.parse(message.channel.topic.clone(), &message.data);
+            parser.parse(
+                message.channel.topic.clone(),
+                &message.data,
+                message.log_time as i64,
+            );
         }
     }
 
@@ -669,7 +660,7 @@ mod tests {
     #[test]
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
-        topic_names.insert("sensor_msgs/msg/Imu".to_string());
+        topic_names.insert("/livox/imu".to_string());
         let test_path = "../datasets/r3live/hku_park_00/hku_park_00_0.mcap";
         let _record_batches = rosbag2record_batches(&test_path, Some(topic_names)).unwrap();
     }
