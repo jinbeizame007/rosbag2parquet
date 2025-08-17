@@ -84,6 +84,8 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
+    let mut skipped_topic_names = HashSet::new();
+
     let mut topic_name_type_table = HashMap::new();
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
@@ -95,6 +97,13 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
                 }
             }
             if schema.data.is_empty() {
+                if !skipped_topic_names.contains(&message.channel.topic) {
+                    println!(
+                        "{} topic is skipped because it has no schema text.",
+                        message.channel.topic
+                    );
+                    skipped_topic_names.insert(message.channel.topic.clone());
+                }
                 continue;
             }
 
@@ -662,6 +671,6 @@ mod tests {
         let mut topic_names = HashSet::new();
         topic_names.insert("/livox/imu".to_string());
         let test_path = "../datasets/r3live/hku_park_00/hku_park_00_0.mcap";
-        let _record_batches = rosbag2record_batches(&test_path, Some(topic_names)).unwrap();
+        let _record_batches = rosbag2record_batches(&test_path, None).unwrap();
     }
 }
