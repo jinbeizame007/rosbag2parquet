@@ -28,6 +28,111 @@ pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: Option<HashSet
     write_record_batches_to_parquet(record_batches, output_dir);
 }
 
+pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
+    path: &P,
+    topic_filter: Option<HashSet<String>>,
+) -> Result<HashMap<String, RecordBatch>> {
+    let mcap_file = read_mcap(path)?;
+
+    let mut type_registry = HashMap::new();
+    let mut topic_name_type_table = HashMap::new();
+    let mut skipped_topic_names = HashSet::new();
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+
+    for (index, message_result) in message_stream.enumerate() {
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let Some(schema) = &message.channel.schema else {
+            continue;
+        };
+
+        let topic_name = &message.channel.topic;
+        if let Some(ref filter) = topic_filter {
+            if !filter.contains(topic_name) {
+                continue;
+            }
+        }
+        if schema.data.is_empty() {
+            if !skipped_topic_names.contains(topic_name) {
+                println!("{topic_name} topic is skipped because it has no schema text.");
+                skipped_topic_names.insert(topic_name.clone());
+            }
+            continue;
+        }
+
+        let type_name = extract_message_type(&schema.name).to_string();
+        topic_name_type_table.insert(topic_name.clone(), type_name.clone());
+        type_registry
+            .entry(type_name)
+            .or_insert_with(|| schema.data.clone());
+    }
+
+    let mut msg_definition_table = HashMap::new();
+    for (type_name, schema_data) in &type_registry {
+        let schema_text = std::str::from_utf8(schema_data)?;
+        let sections = ros::parse_schema_sections(type_name, schema_text);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+    }
+
+    let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table).build_all()?;
+    let mut parser =
+        CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas);
+    let message_stream =
+        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    for (index, message_result) in message_stream.enumerate() {
+        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let Some(schema) = &message.channel.schema else {
+            continue;
+        };
+
+        let topic = &message.channel.topic;
+        if schema.data.is_empty() || !topic_name_type_table.contains_key(topic) {
+            continue;
+        }
+        parser.parse(topic.clone(), &message.data, message.log_time as i64);
+    }
+
+    let record_batches = parser.finish();
+
+    Ok(record_batches)
+}
+
+fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
+    let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
+    unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
+}
+
+pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
+    record_batches: HashMap<String, RecordBatch>,
+    root_dir_path: P,
+) {
+    if !root_dir_path.as_ref().exists() {
+        fs::create_dir_all(root_dir_path.as_ref()).unwrap();
+    }
+
+    for (name, record_batch) in record_batches {
+        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
+        let path = Utf8Path::new(&path_string);
+        let dir_path = path.parent().unwrap();
+        if !dir_path.exists() {
+            fs::create_dir_all(dir_path).unwrap();
+        }
+
+        let file = std::fs::File::create(path).unwrap();
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::SNAPPY)
+            .build();
+        let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
+            file,
+            record_batch.schema(),
+            Some(props),
+        )
+        .unwrap();
+        writer.write(&record_batch).expect("Writing batch failed");
+        writer.close().unwrap();
+    }
+}
+
 pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
     let mcap_file = read_mcap(path)?;
 
@@ -72,128 +177,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     }
 
     Ok(parsed_messages)
-}
-
-pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
-    path: &P,
-    topic_filter: Option<HashSet<String>>,
-) -> Result<HashMap<String, RecordBatch>> {
-    let mcap_file = read_mcap(path)?;
-
-    let mut type_registry = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    let mut skipped_topic_names = HashSet::new();
-
-    let mut topic_name_type_table = HashMap::new();
-    for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
-
-        if let Some(schema) = &message.channel.schema {
-            let topic = &message.channel.topic;
-            
-            if let Some(ref filter) = topic_filter {
-                if !filter.contains(topic) {
-                    continue;
-                }
-            }
-            if schema.data.is_empty() {
-                if !skipped_topic_names.contains(topic) {
-                    println!(
-                        "{} topic is skipped because it has no schema text.",
-                        topic
-                    );
-                    skipped_topic_names.insert(topic.clone());
-                }
-                continue;
-            }
-
-            let type_name = extract_message_type(&schema.name).to_string();
-            topic_name_type_table.insert(topic.clone(), type_name.clone());
-            type_registry
-                .entry(type_name)
-                .or_insert_with(|| schema.data.clone());
-        }
-    }
-
-    let mut msg_definition_table = HashMap::new();
-    for (type_name, schema_data) in &type_registry {
-        let schema_text = std::str::from_utf8(schema_data)?;
-        let sections = ros::parse_schema_sections(type_name, schema_text);
-        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
-    }
-
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
-
-    let converter = ArrowSchemaBuilder::new(&msg_definition_table);
-    let mut schemas = converter.build_all()?;
-
-    let mut parser =
-        CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas);
-    for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
-
-        if let Some(schema) = &message.channel.schema {
-            let topic = &message.channel.topic;
-            
-            if let Some(ref filter) = topic_filter {
-                if !filter.contains(topic) {
-                    continue;
-                }
-            }
-
-            if schema.data.is_empty() {
-                continue;
-            }
-            parser.parse(
-                topic.clone(),
-                &message.data,
-                message.log_time as i64,
-            );
-        }
-    }
-
-    let record_batches = parser.finish();
-
-    Ok(record_batches)
-}
-
-fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
-    let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
-    unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
-}
-
-pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
-    record_batches: HashMap<String, RecordBatch>,
-    root_dir_path: P,
-) {
-    if !root_dir_path.as_ref().exists() {
-        fs::create_dir_all(root_dir_path.as_ref()).unwrap();
-    }
-
-    for (name, record_batch) in record_batches {
-        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
-        let path = Utf8Path::new(&path_string);
-        let dir_path = path.parent().unwrap();
-        if !dir_path.exists() {
-            fs::create_dir_all(dir_path).unwrap();
-        }
-
-        let file = std::fs::File::create(path).unwrap();
-        let props = parquet::file::properties::WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::SNAPPY)
-            .build();
-        let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
-            file,
-            record_batch.schema(),
-            Some(props),
-        )
-        .unwrap();
-        writer.write(&record_batch).expect("Writing batch failed");
-        writer.close().unwrap();
-    }
 }
 
 #[cfg(test)]
