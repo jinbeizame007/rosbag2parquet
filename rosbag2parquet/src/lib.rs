@@ -91,24 +91,26 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
+            let topic = &message.channel.topic;
+            
             if let Some(ref filter) = topic_filter {
-                if !filter.contains(&message.channel.topic) {
+                if !filter.contains(topic) {
                     continue;
                 }
             }
             if schema.data.is_empty() {
-                if !skipped_topic_names.contains(&message.channel.topic) {
+                if !skipped_topic_names.contains(topic) {
                     println!(
                         "{} topic is skipped because it has no schema text.",
-                        message.channel.topic
+                        topic
                     );
-                    skipped_topic_names.insert(message.channel.topic.clone());
+                    skipped_topic_names.insert(topic.clone());
                 }
                 continue;
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
-            topic_name_type_table.insert(message.channel.topic.clone(), type_name.clone());
+            topic_name_type_table.insert(topic.clone(), type_name.clone());
             type_registry
                 .entry(type_name)
                 .or_insert_with(|| schema.data.clone());
@@ -134,8 +136,10 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
+            let topic = &message.channel.topic;
+            
             if let Some(ref filter) = topic_filter {
-                if !filter.contains(&message.channel.topic) {
+                if !filter.contains(topic) {
                     continue;
                 }
             }
@@ -144,7 +148,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
                 continue;
             }
             parser.parse(
-                message.channel.topic.clone(),
+                topic.clone(),
                 &message.data,
                 message.log_time as i64,
             );
