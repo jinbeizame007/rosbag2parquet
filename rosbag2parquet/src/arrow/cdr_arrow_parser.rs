@@ -75,13 +75,13 @@ impl<'a> CdrArrowParser<'a> {
             .collect::<Vec<_>>();
         for name in keys {
             let type_name = self.topic_name_type_table.get(&name).unwrap();
-            let schema = self.schemas.remove(type_name.as_str()).unwrap();
+            let schema = self.schemas.get(type_name.as_str()).unwrap();
             let mut builders = self.array_builders_table.remove(&name).unwrap();
             let built_array = builders
                 .iter_mut()
                 .map(|builder| builder.finish())
                 .collect::<Vec<_>>();
-            let batch = RecordBatch::try_new(schema, built_array);
+            let batch = RecordBatch::try_new(schema.clone(), built_array);
             batches.insert(name.to_string(), batch.unwrap());
         }
 
