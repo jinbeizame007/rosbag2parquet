@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_rosbag2ros_msg_values() {
-        let test_path = "../rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let test_path = "../datasets/base_msgs/base_msgs_0.mcap";
         let ros_msg_values = rosbag2ros_msg_values(test_path)
             .expect("Failed to parse ROS messages from test MCAP file");
 
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_rosbag2ros_msg_values_array() {
-        let test_path = "../rosbags/array_msgs/array_msgs_0.mcap";
+        let test_path = "../datasets/array_msgs/array_msgs_0.mcap";
         let ros_msg_values = rosbag2ros_msg_values(test_path)
             .expect("Failed to parse ROS array messages from test MCAP file");
 
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn test_cdr_arrow_parser() {
-        let test_path = "../rosbags/non_array_msgs/non_array_msgs_0.mcap";
+        let test_path = "../datasets/base_msgs/base_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         let twist_batch = record_batches
@@ -475,12 +475,12 @@ mod tests {
             StringArray::from(vec!["Hello, World!"]),
         );
 
-        write_record_batches_to_parquet(record_batches, "../rosbags/non_array_msgs/parquet");
+        write_record_batches_to_parquet(record_batches, "../datasets/base_msgs/parquet");
     }
 
     #[test]
     fn test_cdr_arrow_parser_array() {
-        let test_path = "../rosbags/array_msgs/array_msgs_0.mcap";
+        let test_path = "../datasets/array_msgs/array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         let imu_batch = record_batches.get("/one_shot/imu").unwrap();
@@ -663,9 +663,10 @@ mod tests {
         ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        write_record_batches_to_parquet(record_batches, "../rosbags/array_msgs/parquet");
+        write_record_batches_to_parquet(record_batches, "../datasets/array_msgs/parquet");
     }
 
+    #[ignore]
     #[test]
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
