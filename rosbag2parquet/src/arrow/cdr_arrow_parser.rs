@@ -18,21 +18,25 @@ use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primit
 
 pub struct CdrArrowParser<'a> {
     array_builders_table: HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
+    topic_name_type_table: &'a HashMap<String, String>,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
 }
 
 impl<'a> CdrArrowParser<'a> {
     pub fn new(
+        topic_name_type_table: &'a HashMap<String, String>,
         msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
         schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
     ) -> Self {
-        let array_builders_table = schemas
+        let array_builders_table = topic_name_type_table
             .iter()
-            .map(|(name, schema)| {
+            .map(|(topic_name, type_name)| {
                 (
-                    name.to_string(),
-                    schema
+                    topic_name.to_string(),
+                    schemas
+                        .get(type_name.as_str())
+                        .unwrap()
                         .fields()
                         .iter()
                         .map(|field| create_array_builder(field.data_type()))
@@ -43,16 +47,19 @@ impl<'a> CdrArrowParser<'a> {
 
         Self {
             array_builders_table,
+            topic_name_type_table,
             msg_definition_table,
             schemas,
         }
     }
 
-    pub fn parse(&mut self, name: String, data: &[u8]) {
+    pub fn parse(&mut self, topic_name: String, data: &[u8]) {
+        let type_name = self.topic_name_type_table.get(&topic_name).unwrap();
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
             self.msg_definition_table,
-            name,
+            topic_name.clone(),
+            type_name.clone(),
             data,
         );
         single_message_parser.parse();
@@ -66,7 +73,8 @@ impl<'a> CdrArrowParser<'a> {
             .cloned()
             .collect::<Vec<_>>();
         for name in keys {
-            let schema = self.schemas.remove(name.as_str()).unwrap();
+            let type_name = self.topic_name_type_table.get(&name).unwrap();
+            let schema = self.schemas.remove(type_name.as_str()).unwrap();
             let mut builders = self.array_builders_table.remove(&name).unwrap();
             let built_array = builders
                 .iter_mut()
@@ -84,21 +92,24 @@ pub struct SingleMessageCdrArrowParser<'a> {
     array_builders_table: &'a mut HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     cdr_deserializer: CdrDeserializer<'a>,
-    name: String,
+    topic_name: String,
+    type_name: String,
 }
 
 impl<'a> SingleMessageCdrArrowParser<'a> {
     pub fn new(
         array_builders_table: &'a mut HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
         msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
-        name: String,
+        topic_name: String,
+        type_name: String,
         data: &'a [u8],
     ) -> Self {
         Self {
             array_builders_table,
             msg_definition_table,
             cdr_deserializer: CdrDeserializer::new(data),
-            name,
+            topic_name,
+            type_name,
         }
     }
 
@@ -150,15 +161,18 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     }
 
     fn parse_without_header(&mut self) {
-        let msg_definition = self.msg_definition_table.get(self.name.as_str()).unwrap();
-        let mut array_builders = self.array_builders_table.remove(&self.name).unwrap();
+        let msg_definition = self
+            .msg_definition_table
+            .get(self.type_name.as_str())
+            .unwrap();
+        let mut array_builders = self.array_builders_table.remove(&self.topic_name).unwrap();
 
         for (array_builder, field) in array_builders.iter_mut().zip(msg_definition.fields.iter()) {
             self.parse_field(field, array_builder);
         }
 
         self.array_builders_table
-            .insert(self.name.clone(), array_builders);
+            .insert(self.topic_name.clone(), array_builders);
     }
 
     fn parse_field(&mut self, field: &FieldDefinition<'a>, array_builder: &mut dyn ArrayBuilder) {

@@ -93,17 +93,17 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
 ) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
 
-    // First, collect all schema data
     let mut type_registry = HashMap::new();
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
+    let mut topic_name_type_table = HashMap::new();
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             if let Some(ref filter) = topic_filter {
-                if !filter.contains(&schema.name) {
+                if !filter.contains(&message.channel.topic) {
                     continue;
                 }
             }
@@ -112,13 +112,13 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             }
 
             let type_name = extract_message_type(&schema.name).to_string();
+            topic_name_type_table.insert(message.channel.topic.clone(), type_name.clone());
             type_registry
                 .entry(type_name)
                 .or_insert_with(|| schema.data.clone());
         }
     }
 
-    // Build message definition table from collected schemas
     let mut msg_definition_table = HashMap::new();
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
@@ -126,29 +126,28 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
-    // Process messages
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
 
     let converter = ArrowSchemaBuilder::new(&msg_definition_table);
     let mut schemas = converter.build_all()?;
 
-    let mut parser = CdrArrowParser::new(&msg_definition_table, &mut schemas);
+    let mut parser =
+        CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas);
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
 
         if let Some(schema) = &message.channel.schema {
             if let Some(ref filter) = topic_filter {
-                if !filter.contains(&schema.name) {
+                if !filter.contains(&message.channel.topic) {
                     continue;
                 }
             }
 
-            let type_name = extract_message_type(&schema.name).to_string();
             if schema.data.is_empty() {
                 continue;
             }
-            parser.parse(type_name, &message.data);
+            parser.parse(message.channel.topic.clone(), &message.data);
         }
     }
 
@@ -164,14 +163,21 @@ fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
 
 pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
     record_batches: HashMap<String, RecordBatch>,
-    path: P,
+    root_dir_path: P,
 ) {
-    if !path.as_ref().exists() {
-        fs::create_dir_all(path.as_ref()).unwrap();
+    if !root_dir_path.as_ref().exists() {
+        fs::create_dir_all(root_dir_path.as_ref()).unwrap();
     }
 
     for (name, record_batch) in record_batches {
-        let file = std::fs::File::create(format!("{}/{}.parquet", path.as_ref(), name)).unwrap();
+        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
+        let path = Utf8Path::new(&path_string);
+        let dir_path = path.parent().unwrap();
+        if !dir_path.exists() {
+            fs::create_dir_all(dir_path).unwrap();
+        }
+
+        let file = std::fs::File::create(path).unwrap();
         let props = parquet::file::properties::WriterProperties::builder()
             .set_compression(parquet::basic::Compression::SNAPPY)
             .build();
@@ -429,7 +435,7 @@ mod tests {
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
         let twist_batch = record_batches
-            .get("Twist")
+            .get("/one_shot/twist")
             .expect("Twist message type not found in record batches");
         let linear_array = twist_batch
             .column_by_name("linear")
@@ -454,14 +460,14 @@ mod tests {
         assert_struct_field_equals(angular_array, "z", Float64Array::from(vec![-0.6]));
 
         let vector3_batch = record_batches
-            .get("Vector3")
+            .get("/one_shot/vector3")
             .expect("Vector3 message type not found in record batches");
         assert_column_equals(vector3_batch, "x", Float64Array::from(vec![1.1]));
         assert_column_equals(vector3_batch, "y", Float64Array::from(vec![2.2]));
         assert_column_equals(vector3_batch, "z", Float64Array::from(vec![3.3]));
 
         let string_batch = record_batches
-            .get("String")
+            .get("/one_shot/string")
             .expect("String message type not found in record batches");
         assert_column_equals(
             string_batch,
@@ -477,7 +483,7 @@ mod tests {
         let test_path = "../rosbags/array_msgs/array_msgs_0.mcap";
         let record_batches = rosbag2record_batches(&test_path, None).unwrap();
 
-        let imu_batch = record_batches.get("Imu").unwrap();
+        let imu_batch = record_batches.get("/one_shot/imu").unwrap();
 
         let header_array = imu_batch
             .column_by_name("header")
@@ -608,7 +614,7 @@ mod tests {
 
         // ********** JointState **********
 
-        let joint_state_batch = record_batches.get("JointState").unwrap();
+        let joint_state_batch = record_batches.get("/one_shot/joint_state").unwrap();
         let header_array = joint_state_batch
             .column_by_name("header")
             .unwrap()
@@ -657,7 +663,7 @@ mod tests {
         ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        write_record_batches_to_parquet(record_batches, "../rosbags/array_msgs");
+        write_record_batches_to_parquet(record_batches, "../rosbags/array_msgs/parquet");
     }
 
     #[test]
