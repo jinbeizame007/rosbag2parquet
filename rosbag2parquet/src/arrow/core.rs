@@ -60,10 +60,7 @@ pub fn create_struct_builder(fields: &Fields) -> StructBuilder {
 
 pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     match data_type {
-        DataType::Timestamp(time_unit, _) => match time_unit {
-            TimeUnit::Nanosecond => Box::new(TimestampNanosecondBuilder::new()),
-            _ => unreachable!(),
-        },
+        DataType::Timestamp(TimeUnit::Nanosecond, _) => Box::new(TimestampNanosecondBuilder::new()),
         DataType::Boolean => Box::new(BooleanBuilder::new()),
         DataType::UInt8 => Box::new(UInt8Builder::new()),
         DataType::UInt16 => Box::new(UInt16Builder::new()),
