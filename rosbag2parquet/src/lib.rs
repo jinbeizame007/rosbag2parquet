@@ -136,7 +136,6 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
 pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
     let mcap_file = read_mcap(path)?;
 
-    // First, collect all schema data
     let mut type_registry = HashMap::new();
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
@@ -152,7 +151,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
         }
     }
 
-    // Build message definition table from collected schemas
     let mut msg_definition_table = HashMap::new();
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
@@ -160,7 +158,6 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
         ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
-    // Process messages
     let mut parsed_messages = Vec::new();
     let message_stream =
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
@@ -192,7 +189,6 @@ mod tests {
     use super::*;
     use crate::ros::test_helpers::*;
 
-    // Helper function to assert struct field equality with better error messages
     fn assert_struct_field_equals<T>(struct_array: &StructArray, field_name: &str, expected: T)
     where
         T: arrow_array::Array,
@@ -215,7 +211,6 @@ mod tests {
         );
     }
 
-    // Helper function to assert column equality with better error messages
     fn assert_column_equals<T>(batch: &RecordBatch, column_name: &str, expected: T)
     where
         T: arrow_array::Array,
@@ -239,7 +234,6 @@ mod tests {
         );
     }
 
-    // Helper function to assert FixedSizeListArray equality with better error messages
     fn assert_fixed_size_list_equals(
         batch: &RecordBatch,
         column_name: &str,
@@ -273,7 +267,6 @@ mod tests {
         );
     }
 
-    // Helper function to assert ListArray equality with better error messages
     fn assert_list_equals(batch: &RecordBatch, column_name: &str, expected: ListArray) {
         let column = batch.column_by_name(column_name).unwrap_or_else(|| {
             panic!(
