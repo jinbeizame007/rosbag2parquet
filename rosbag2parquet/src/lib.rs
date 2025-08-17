@@ -2,6 +2,7 @@ pub mod arrow;
 pub mod cdr;
 pub mod core;
 pub mod ros;
+pub mod topic_filter;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -21,9 +22,18 @@ use crate::ros::Message;
 
 pub use cdr::Endianness;
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
+pub use topic_filter::TopicFilter;
 
 pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: Option<HashSet<String>>) {
-    let record_batches = rosbag2record_batches(path, topic_filter).unwrap();
+    let filter = match topic_filter {
+        Some(topics) => TopicFilter::include(topics),
+        None => TopicFilter::all(),
+    };
+    rosbag2parquet_with_filter(path, filter);
+}
+
+pub fn rosbag2parquet_with_filter<P: AsRef<Utf8Path>>(path: &P, topic_filter: TopicFilter) {
+    let record_batches = rosbag2record_batches_with_filter(path, topic_filter).unwrap();
     let output_dir = path.as_ref().parent().unwrap().join("parquet");
     write_record_batches_to_parquet(record_batches, output_dir);
 }
@@ -31,6 +41,17 @@ pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: Option<HashSet
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     path: &P,
     topic_filter: Option<HashSet<String>>,
+) -> Result<HashMap<String, RecordBatch>> {
+    let filter = match topic_filter {
+        Some(topics) => TopicFilter::include(topics),
+        None => TopicFilter::all(),
+    };
+    rosbag2record_batches_with_filter(path, filter)
+}
+
+pub fn rosbag2record_batches_with_filter<P: AsRef<Utf8Path>>(
+    path: &P,
+    topic_filter: TopicFilter,
 ) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
 
@@ -47,10 +68,8 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         };
 
         let topic_name = &message.channel.topic;
-        if let Some(ref filter) = topic_filter {
-            if !filter.contains(topic_name) {
-                continue;
-            }
+        if !topic_filter.matches(topic_name) {
+            continue;
         }
         if schema.data.is_empty() {
             if !skipped_topic_names.contains(topic_name) {
@@ -592,8 +611,6 @@ mod tests {
             expected_linear_acceleration_covariance_array,
         );
 
-        // ********** JointState **********
-
         let joint_state_batch = record_batches.get("/one_shot/joint_state").unwrap();
         let header_array = joint_state_batch
             .column_by_name("header")
@@ -653,5 +670,38 @@ mod tests {
         topic_names.insert("/livox/imu".to_string());
         let test_path = "../testdata/r3live/hku_park_00/hku_park_00_0.mcap";
         let _record_batches = rosbag2record_batches(&test_path, None).unwrap();
+    }
+
+    #[test]
+    fn test_topic_filter_include() {
+        let test_path = "../testdata/rosbag/base_msgs/base_msgs_0.mcap";
+        let filter = TopicFilter::include(["/one_shot/vector3".to_string()]);
+        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+
+        assert!(record_batches.contains_key("/one_shot/vector3"));
+        assert!(!record_batches.contains_key("/one_shot/twist"));
+        assert!(!record_batches.contains_key("/one_shot/string"));
+    }
+
+    #[test]
+    fn test_topic_filter_exclude() {
+        let test_path = "../testdata/rosbag/base_msgs/base_msgs_0.mcap";
+        let filter = TopicFilter::exclude(["/one_shot/vector3".to_string()]);
+        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+
+        assert!(!record_batches.contains_key("/one_shot/vector3"));
+        assert!(record_batches.contains_key("/one_shot/twist"));
+        assert!(record_batches.contains_key("/one_shot/string"));
+    }
+
+    #[test]
+    fn test_topic_filter_all() {
+        let test_path = "../testdata/rosbag/base_msgs/base_msgs_0.mcap";
+        let filter = TopicFilter::all();
+        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+
+        assert!(record_batches.contains_key("/one_shot/vector3"));
+        assert!(record_batches.contains_key("/one_shot/twist"));
+        assert!(record_batches.contains_key("/one_shot/string"));
     }
 }

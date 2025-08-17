@@ -1,5 +1,3 @@
-//! CDR (Common Data Representation) deserializer for ROS2 messages
-
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
 const CDR_HEADER_SIZE: usize = 4;

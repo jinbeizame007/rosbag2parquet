@@ -1,5 +1,3 @@
-//! ROS2 message type definitions
-
 use std::collections::HashMap;
 
 use nom::{
@@ -68,7 +66,6 @@ pub enum Primitive {
     String,
 }
 
-// Runtime data types are now in data.rs
 
 #[derive(Debug, Clone)]
 pub struct SchemaSection<'a> {
@@ -113,7 +110,6 @@ pub fn parse_msg_definition_from_schema_section<'a>(
     msg_definition_table: &mut HashMap<&'a str, MessageDefinition<'a>>,
 ) {
     for schema_section in schema_sections.iter().rev() {
-        // Use the short name as the key
         let short_name = extract_message_type(schema_section.type_name);
 
         if msg_definition_table.contains_key(short_name) {
@@ -194,7 +190,6 @@ pub fn non_array_ros_data_type(input: &str) -> IResult<&str, BaseType> {
         return Ok((rest, BaseType::Primitive(prim)));
     }
 
-    // Otherwise, parse as a complex type (package/type format)
     let mut parser = map(
         recognize(pair(identifier, many0(pair(tag("/"), identifier)))),
         |full_type: &str| BaseType::Complex(full_type.to_string()),
@@ -227,7 +222,6 @@ pub mod test_helpers {
     use super::super::data::{BaseValue, Field, FieldValue, Message, PrimitiveValue};
     use super::*;
 
-    // Helper builder for creating field definitions
     pub struct FieldDefBuilder;
 
     impl FieldDefBuilder {

@@ -1,5 +1,3 @@
-//! Runtime data structures for ROS2 messages
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Message {
     pub name: String,
