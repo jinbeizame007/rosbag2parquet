@@ -1,5 +1,7 @@
 # rosbag2parquet
 
+A ROS-independent CLI to convert ROS2 bag files (MCAP format) to Apache Parquet.
+
 ```bash
 cargo install --path rosbag2parquet-cli 
 ```
