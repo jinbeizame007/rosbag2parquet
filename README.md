@@ -1,5 +1,9 @@
 # rosbag2parquet
 
+<div align="center">
+    <img src="media/logo1.webp" alt="siras" width="40%">
+</div>
+
 A ROS-independent CLI to convert ROS2 bag files (MCAP format) to Apache Parquet.
 
 ⚠️ **Work In Progress**: This package is currently in alpha development. APIs may change.
