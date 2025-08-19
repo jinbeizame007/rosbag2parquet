@@ -39,6 +39,8 @@ rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parqu
 If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
 Each parquet file will be saved with a path that corresponds to its topic name.
 
+For example,
+
 ```
 r3live
 ├── hku_park_00_0.mcap
