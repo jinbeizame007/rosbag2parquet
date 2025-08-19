@@ -13,10 +13,10 @@ cargo install --path rosbag2parquet-cli
 bash scripts/download_r3live_dataset.bash
 
 # Convert all topics
-rosbag2parquet convert ./testdata/rosbag/r3live/hku_park_00_0.mcap
+rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap
 
 # Convert specific topics
-rosbag2parquet convert ./testdata/rosbag/r3live/hku_park_00_0.mcap --topic /livox/imu /livox/lidar
+rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --topic /livox/imu /livox/lidar
 ```
 
 #### Credits

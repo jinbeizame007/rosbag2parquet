@@ -5,6 +5,7 @@ build-backend = "maturin"
 [project]
 name = "rosbag2parquet"
 version = "0.1.0"
+description = "Convert ROS bag files (MCAP format) to Apache Parquet"
 requires-python = ">=3.9"
 readme = "README.md"
 
