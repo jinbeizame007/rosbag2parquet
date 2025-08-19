@@ -1,18 +1,26 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use camino::Utf8PathBuf;
+use parquet::basic::Compression;
 
 #[derive(Debug, Clone)]
 pub struct Config {
     topic_filter: TopicFilter,
     output_dir: Option<Utf8PathBuf>,
+    compression: Compression,
 }
 
 impl Config {
-    pub fn new(topic_filter: TopicFilter, output_dir: Option<Utf8PathBuf>) -> Self {
+    pub fn new(
+        topic_filter: TopicFilter,
+        output_dir: Option<Utf8PathBuf>,
+        compression: Compression,
+    ) -> Self {
         Self {
             topic_filter,
             output_dir,
+            compression,
         }
     }
 
@@ -23,11 +31,31 @@ impl Config {
     pub fn output_dir(&self) -> Option<&Utf8PathBuf> {
         self.output_dir.as_ref()
     }
+
+    pub fn set_topic_filter(mut self, topic_filter: TopicFilter) -> Self {
+        self.topic_filter = topic_filter;
+        self
+    }
+
+    pub fn set_output_dir(mut self, output_dir: Option<Utf8PathBuf>) -> Self {
+        self.output_dir = output_dir;
+        self
+    }
+
+    pub fn set_compression(mut self, compression: Compression) -> Self {
+        self.compression = compression;
+        self
+    }
+
+    pub fn set_compression_from_str(mut self, compression: &str) -> Self {
+        self.compression = Compression::from_str(compression).unwrap();
+        self
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new(TopicFilter::all(), None)
+        Self::new(TopicFilter::all(), None, Compression::SNAPPY)
     }
 }
 

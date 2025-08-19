@@ -7,7 +7,9 @@ fn main() {
     topic_names.insert("/livox/lidar".to_string());
     topic_names.insert("/camera/image_color/compressed".to_string());
 
-    let test_path = "testdata/r3live/hku_park_00/hku_park_00_0.mcap";
-    let config = Config::new(TopicFilter::include(topic_names), None);
+    let test_path = "testdata/r3live/hku_park_00_0.mcap";
+    let config = Config::default()
+        .set_topic_filter(TopicFilter::include(topic_names))
+        .set_compression_from_str("SNAPPY");
     rosbag2parquet(&test_path, config);
 }

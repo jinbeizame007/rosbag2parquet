@@ -22,10 +22,9 @@ fn convert(
     };
 
     py.allow_threads(|| {
-        let config = Config::new(
-            filter,
-            output_dir.map(|p| Utf8PathBuf::try_from(p).unwrap()),
-        );
+        let config = Config::default()
+            .set_topic_filter(filter)
+            .set_output_dir(output_dir.map(|p| Utf8PathBuf::try_from(p).unwrap()));
         rosbag2parquet::rosbag2parquet(&utf8_path, config);
         Ok(())
     })

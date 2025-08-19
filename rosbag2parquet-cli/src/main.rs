@@ -25,6 +25,9 @@ enum Commands {
 
         #[arg(long, help = "Output directory for the converted Parquet files")]
         output_dir: Option<Utf8PathBuf>,
+
+        #[arg(long, help = "Compression algorithm to use")]
+        compression: Option<String>,
     },
 }
 
@@ -36,6 +39,7 @@ fn main() {
             input,
             topic,
             output_dir,
+            compression,
         } => {
             let topic_filter = if !topic.is_empty() {
                 TopicFilter::include(topic)
@@ -43,7 +47,12 @@ fn main() {
                 TopicFilter::all()
             };
 
-            let config = Config::new(topic_filter, output_dir);
+            let mut config = Config::default()
+                .set_topic_filter(topic_filter)
+                .set_output_dir(output_dir);
+            if let Some(compression) = compression {
+                config = config.set_compression_from_str(&compression);
+            }
             rosbag2parquet::rosbag2parquet(&input, config);
             println!("Conversion completed successfully!");
         }
