@@ -16,14 +16,14 @@ impl TopicFilter {
         }
     }
 
-    pub fn include<I>(topics: I) -> Self 
+    pub fn include<I>(topics: I) -> Self
     where
         I: IntoIterator<Item = String>,
     {
         Self::Include(topics.into_iter().collect())
     }
 
-    pub fn exclude<I>(topics: I) -> Self 
+    pub fn exclude<I>(topics: I) -> Self
     where
         I: IntoIterator<Item = String>,
     {
@@ -55,11 +55,9 @@ mod tests {
 
     #[test]
     fn test_include_filter() {
-        let filter = TopicFilter::include([
-            "/camera/image".to_string(),
-            "/lidar/points".to_string(),
-        ]);
-        
+        let filter =
+            TopicFilter::include(["/camera/image".to_string(), "/lidar/points".to_string()]);
+
         assert!(filter.matches("/camera/image"));
         assert!(filter.matches("/lidar/points"));
         assert!(!filter.matches("/other/topic"));
@@ -68,11 +66,8 @@ mod tests {
 
     #[test]
     fn test_exclude_filter() {
-        let filter = TopicFilter::exclude([
-            "/diagnostics".to_string(),
-            "/rosout".to_string(),
-        ]);
-        
+        let filter = TopicFilter::exclude(["/diagnostics".to_string(), "/rosout".to_string()]);
+
         assert!(!filter.matches("/diagnostics"));
         assert!(!filter.matches("/rosout"));
         assert!(filter.matches("/camera/image"));
@@ -103,7 +98,7 @@ mod tests {
         let filter1 = TopicFilter::include(["/topic1".to_string()]);
         let filter2 = filter1.clone();
         assert_eq!(filter1, filter2);
-        
+
         let filter3 = TopicFilter::exclude(["/topic2".to_string()]);
         assert_ne!(filter1, filter3);
     }

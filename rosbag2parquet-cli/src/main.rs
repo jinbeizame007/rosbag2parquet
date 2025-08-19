@@ -36,7 +36,7 @@ fn main() {
                 TopicFilter::all()
             };
 
-            rosbag2parquet::rosbag2parquet_with_filter(&input, topic_filter);
+            rosbag2parquet::rosbag2parquet(&input, topic_filter);
             println!("Conversion completed successfully!");
         }
     }

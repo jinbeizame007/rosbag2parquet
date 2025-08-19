@@ -66,7 +66,6 @@ pub enum Primitive {
     String,
 }
 
-
 #[derive(Debug, Clone)]
 pub struct SchemaSection<'a> {
     pub type_name: &'a str,

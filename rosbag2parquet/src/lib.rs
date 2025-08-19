@@ -24,32 +24,13 @@ pub use cdr::Endianness;
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 pub use topic_filter::TopicFilter;
 
-pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: Option<HashSet<String>>) {
-    let filter = match topic_filter {
-        Some(topics) => TopicFilter::include(topics),
-        None => TopicFilter::all(),
-    };
-    rosbag2parquet_with_filter(path, filter);
-}
-
-pub fn rosbag2parquet_with_filter<P: AsRef<Utf8Path>>(path: &P, topic_filter: TopicFilter) {
-    let record_batches = rosbag2record_batches_with_filter(path, topic_filter).unwrap();
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, topic_filter: TopicFilter) {
+    let record_batches = rosbag2record_batches(path, topic_filter).unwrap();
     let output_dir = path.as_ref().parent().unwrap().join("parquet");
     write_record_batches_to_parquet(record_batches, output_dir);
 }
 
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
-    path: &P,
-    topic_filter: Option<HashSet<String>>,
-) -> Result<HashMap<String, RecordBatch>> {
-    let filter = match topic_filter {
-        Some(topics) => TopicFilter::include(topics),
-        None => TopicFilter::all(),
-    };
-    rosbag2record_batches_with_filter(path, filter)
-}
-
-pub fn rosbag2record_batches_with_filter<P: AsRef<Utf8Path>>(
     path: &P,
     topic_filter: TopicFilter,
 ) -> Result<HashMap<String, RecordBatch>> {
@@ -431,7 +412,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(&test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, TopicFilter::all()).unwrap();
 
         let twist_batch = record_batches
             .get("/one_shot/twist")
@@ -480,7 +461,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser_array() {
         let test_path = "../testdata/array_msgs/array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(&test_path, None).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, TopicFilter::all()).unwrap();
 
         let imu_batch = record_batches.get("/one_shot/imu").unwrap();
 
@@ -669,14 +650,14 @@ mod tests {
         let mut topic_names = HashSet::new();
         topic_names.insert("/livox/imu".to_string());
         let test_path = "../testdata/r3live/hku_park_00/hku_park_00_0.mcap";
-        let _record_batches = rosbag2record_batches(&test_path, None).unwrap();
+        let _record_batches = rosbag2record_batches(&test_path, TopicFilter::all()).unwrap();
     }
 
     #[test]
     fn test_topic_filter_include() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
         let filter = TopicFilter::include(["/one_shot/vector3".to_string()]);
-        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, filter).unwrap();
 
         assert!(record_batches.contains_key("/one_shot/vector3"));
         assert!(!record_batches.contains_key("/one_shot/twist"));
@@ -687,7 +668,7 @@ mod tests {
     fn test_topic_filter_exclude() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
         let filter = TopicFilter::exclude(["/one_shot/vector3".to_string()]);
-        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, filter).unwrap();
 
         assert!(!record_batches.contains_key("/one_shot/vector3"));
         assert!(record_batches.contains_key("/one_shot/twist"));
@@ -698,7 +679,7 @@ mod tests {
     fn test_topic_filter_all() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
         let filter = TopicFilter::all();
-        let record_batches = rosbag2record_batches_with_filter(&test_path, filter).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, filter).unwrap();
 
         assert!(record_batches.contains_key("/one_shot/vector3"));
         assert!(record_batches.contains_key("/one_shot/twist"));

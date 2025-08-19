@@ -26,13 +26,12 @@ fn convert(
             let utf8_output = Utf8PathBuf::try_from(output)
                 .map_err(|e| PyValueError::new_err(format!("Invalid UTF-8 output path: {e}")))?;
 
-            let record_batches =
-                rosbag2parquet::rosbag2record_batches_with_filter(&utf8_path, filter)
-                    .map_err(|e| PyIOError::new_err(format!("Failed to read MCAP file: {e}")))?;
+            let record_batches = rosbag2parquet::rosbag2record_batches(&utf8_path, filter)
+                .map_err(|e| PyIOError::new_err(format!("Failed to read MCAP file: {e}")))?;
 
             rosbag2parquet::write_record_batches_to_parquet(record_batches, utf8_output);
         } else {
-            rosbag2parquet::rosbag2parquet_with_filter(&utf8_path, filter);
+            rosbag2parquet::rosbag2parquet(&utf8_path, filter);
         }
         Ok(())
     })
