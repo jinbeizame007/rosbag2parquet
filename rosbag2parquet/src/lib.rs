@@ -652,7 +652,7 @@ mod tests {
     fn test_record_batch_builder_large() {
         let mut topic_names = HashSet::new();
         topic_names.insert("/livox/imu".to_string());
-        let test_path = "../testdata/r3live/hku_park_00/hku_park_00_0.mcap";
+        let test_path = "../testdata/r3live/hku_park_00_0.mcap";
         let _record_batches = rosbag2record_batches(&test_path, &TopicFilter::all()).unwrap();
     }
 

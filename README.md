@@ -33,9 +33,22 @@ rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap
 rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --topic /livox/imu /livox/lidar
 
 # Specify the output directory
-# If the output directory is not provided, rosbag2parquet will create a `parquet` directory
-# under the same directory as the mcap file will be chosen.
 rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
+```
+
+If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
+Each parquet file will be saved with a path that corresponds to its topic name.
+
+```
+r3live
+├── hku_park_00_0.mcap
+└── parquet
+    ├── camera
+    │   └── image_color
+    │       └── compressed.parquet
+    └── livox
+        ├── imu.parquet
+        └── lidar.parquet
 ```
 
 ## Python
