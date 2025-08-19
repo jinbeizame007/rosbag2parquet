@@ -3,4 +3,5 @@ resolver = "2"
 members = [
     "rosbag2parquet",
     "rosbag2parquet-cli",
+    "rosbag2parquet-pyo3",
 ]

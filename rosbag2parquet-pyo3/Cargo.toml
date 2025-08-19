@@ -1,0 +1,20 @@
+[package]
+name = "rosbag2parquet-pyo3"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rosbag2parquet_pyo3"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.25", features = ["extension-module", "abi3-py39"] }
+rosbag2parquet = { path = "../rosbag2parquet" }
+camino = "1.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
