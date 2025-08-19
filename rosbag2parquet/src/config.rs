@@ -1,5 +1,36 @@
 use std::collections::HashSet;
 
+use camino::Utf8PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct Config {
+    topic_filter: TopicFilter,
+    output_dir: Option<Utf8PathBuf>,
+}
+
+impl Config {
+    pub fn new(topic_filter: TopicFilter, output_dir: Option<Utf8PathBuf>) -> Self {
+        Self {
+            topic_filter,
+            output_dir,
+        }
+    }
+
+    pub fn topic_filter(&self) -> &TopicFilter {
+        &self.topic_filter
+    }
+
+    pub fn output_dir(&self) -> Option<&Utf8PathBuf> {
+        self.output_dir.as_ref()
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self::new(TopicFilter::all(), None)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TopicFilter {
     All,

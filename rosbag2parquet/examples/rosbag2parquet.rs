@@ -1,4 +1,4 @@
-use rosbag2parquet::{rosbag2parquet, TopicFilter};
+use rosbag2parquet::{rosbag2parquet, Config, TopicFilter};
 use std::collections::HashSet;
 
 fn main() {
@@ -8,5 +8,6 @@ fn main() {
     topic_names.insert("/camera/image_color/compressed".to_string());
 
     let test_path = "testdata/r3live/hku_park_00/hku_park_00_0.mcap";
-    rosbag2parquet(&test_path, TopicFilter::include(topic_names));
+    let config = Config::new(TopicFilter::include(topic_names), None);
+    rosbag2parquet(&test_path, config);
 }

@@ -31,6 +31,11 @@ rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap
 
 # Convert specific topics
 rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --topic /livox/imu /livox/lidar
+
+# Specify the output directory
+# If the output directory is not provided, rosbag2parquet will create a `parquet` directory
+# under the same directory as the mcap file will be chosen.
+rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
 ```
 
 ## Python

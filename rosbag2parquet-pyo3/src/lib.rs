@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use rosbag2parquet::{self, TopicFilter};
+use rosbag2parquet::{self, Config, TopicFilter};
 
 #[pyfunction]
 #[pyo3(signature = (path, output_dir=None, topics=None))]
@@ -22,17 +22,11 @@ fn convert(
     };
 
     py.allow_threads(|| {
-        if let Some(output) = output_dir {
-            let utf8_output = Utf8PathBuf::try_from(output)
-                .map_err(|e| PyValueError::new_err(format!("Invalid UTF-8 output path: {e}")))?;
-
-            let record_batches = rosbag2parquet::rosbag2record_batches(&utf8_path, filter)
-                .map_err(|e| PyIOError::new_err(format!("Failed to read MCAP file: {e}")))?;
-
-            rosbag2parquet::write_record_batches_to_parquet(record_batches, utf8_output);
-        } else {
-            rosbag2parquet::rosbag2parquet(&utf8_path, filter);
-        }
+        let config = Config::new(
+            filter,
+            output_dir.map(|p| Utf8PathBuf::try_from(p).unwrap()),
+        );
+        rosbag2parquet::rosbag2parquet(&utf8_path, config);
         Ok(())
     })
 }
