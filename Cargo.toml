@@ -5,3 +5,8 @@ members = [
     "rosbag2parquet-cli",
     "rosbag2parquet-pyo3",
 ]
+
+[workspace.package]
+repository = "https://github.com/jinbeizame007/rosbag2parquet"
+license = "MIT"
+license-file = "LICENSE"
