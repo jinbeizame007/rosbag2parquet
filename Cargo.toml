@@ -7,6 +7,9 @@ members = [
 ]
 
 [workspace.package]
+authors = ["Masafumi Takahashi <jinbeizame007@gmail.com>"]
+description = "Convert MCAP-format ROS2 bag files to Apache Parquet format"
 repository = "https://github.com/jinbeizame007/rosbag2parquet"
+keywords = ["ros", "rosbag", "parquet", "mcap", "robotics"]
 license = "MIT"
 license-file = "LICENSE"
