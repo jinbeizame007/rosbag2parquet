@@ -1,4 +1,4 @@
-use rosbag2parquet::{rosbag2parquet, Config, TopicFilter};
+use rosbag2parquet::{rosbag2parquet, Config};
 use std::collections::HashSet;
 
 fn main() {
@@ -9,7 +9,7 @@ fn main() {
 
     let test_path = "testdata/r3live/hku_park_00_0.mcap";
     let config = Config::default()
-        .set_topic_filter(TopicFilter::include(topic_names))
+        .set_include_topic_names(Some(topic_names))
         .set_compression_from_str("SNAPPY");
     rosbag2parquet(&test_path, config);
 }

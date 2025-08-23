@@ -2,38 +2,56 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use camino::Utf8PathBuf;
+use mcap::Message;
 use parquet::basic::Compression;
 
 #[derive(Debug, Clone)]
 pub struct Config {
-    topic_filter: TopicFilter,
+    message_filter: MessageFilter,
     output_dir: Option<Utf8PathBuf>,
     compression: Compression,
 }
 
 impl Config {
     pub fn new(
-        topic_filter: TopicFilter,
+        message_filter: MessageFilter,
         output_dir: Option<Utf8PathBuf>,
         compression: Compression,
     ) -> Self {
         Self {
-            topic_filter,
+            message_filter,
             output_dir,
             compression,
         }
     }
 
-    pub fn topic_filter(&self) -> &TopicFilter {
-        &self.topic_filter
+    pub fn message_filter(&self) -> &MessageFilter {
+        &self.message_filter
     }
 
     pub fn output_dir(&self) -> Option<&Utf8PathBuf> {
         self.output_dir.as_ref()
     }
 
-    pub fn set_topic_filter(mut self, topic_filter: TopicFilter) -> Self {
-        self.topic_filter = topic_filter;
+    pub fn set_include_topic_names(mut self, include_topic_names: Option<HashSet<String>>) -> Self {
+        self.message_filter
+            .set_include_topic_names(include_topic_names);
+        self
+    }
+
+    pub fn set_exclude_topic_names(mut self, exclude_topic_names: Option<HashSet<String>>) -> Self {
+        self.message_filter
+            .set_exclude_topic_names(exclude_topic_names);
+        self
+    }
+
+    pub fn set_start_time(mut self, start_time: Option<u64>) -> Self {
+        self.message_filter.set_start_time(start_time);
+        self
+    }
+
+    pub fn set_end_time(mut self, end_time: Option<u64>) -> Self {
+        self.message_filter.set_end_time(end_time);
         self
     }
 
@@ -55,110 +73,67 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new(TopicFilter::all(), None, Compression::SNAPPY)
+        Self::new(MessageFilter::default(), None, Compression::SNAPPY)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TopicFilter {
-    All,
-    Include(HashSet<String>),
-    Exclude(HashSet<String>),
+pub struct MessageFilter {
+    include_topic_names: Option<HashSet<String>>,
+    exclude_topic_names: Option<HashSet<String>>,
+    start_time: Option<u64>,
+    end_time: Option<u64>,
 }
 
-impl TopicFilter {
-    pub fn matches(&self, topic: &str) -> bool {
-        match self {
-            Self::All => true,
-            Self::Include(topics) => topics.contains(topic),
-            Self::Exclude(topics) => !topics.contains(topic),
+impl MessageFilter {
+    pub fn set_include_topic_names(&mut self, include_topic_names: Option<HashSet<String>>) {
+        self.include_topic_names = include_topic_names;
+    }
+
+    pub fn set_exclude_topic_names(&mut self, exclude_topic_names: Option<HashSet<String>>) {
+        self.exclude_topic_names = exclude_topic_names;
+    }
+
+    pub fn set_start_time(&mut self, start_time: Option<u64>) {
+        self.start_time = start_time;
+    }
+
+    pub fn set_end_time(&mut self, end_time: Option<u64>) {
+        self.end_time = end_time;
+    }
+
+    pub fn matches(&self, message: &Message) -> bool {
+        if let Some(include_topic_names) = &self.include_topic_names {
+            if !include_topic_names.contains(&message.channel.topic) {
+                return false;
+            }
         }
-    }
-
-    pub fn include<I>(topics: I) -> Self
-    where
-        I: IntoIterator<Item = String>,
-    {
-        Self::Include(topics.into_iter().collect())
-    }
-
-    pub fn exclude<I>(topics: I) -> Self
-    where
-        I: IntoIterator<Item = String>,
-    {
-        Self::Exclude(topics.into_iter().collect())
-    }
-
-    pub fn all() -> Self {
-        Self::All
+        if let Some(exclude_topic_names) = &self.exclude_topic_names {
+            if exclude_topic_names.contains(&message.channel.topic) {
+                return false;
+            }
+        }
+        if let Some(start_time) = self.start_time {
+            if message.log_time < start_time {
+                return false;
+            }
+        }
+        if let Some(end_time) = self.end_time {
+            if message.log_time > end_time {
+                return false;
+            }
+        }
+        true
     }
 }
 
-impl Default for TopicFilter {
+impl Default for MessageFilter {
     fn default() -> Self {
-        Self::All
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_all_filter() {
-        let filter = TopicFilter::all();
-        assert!(filter.matches("/any/topic"));
-        assert!(filter.matches("/another/topic"));
-        assert!(filter.matches(""));
-    }
-
-    #[test]
-    fn test_include_filter() {
-        let filter =
-            TopicFilter::include(["/camera/image".to_string(), "/lidar/points".to_string()]);
-
-        assert!(filter.matches("/camera/image"));
-        assert!(filter.matches("/lidar/points"));
-        assert!(!filter.matches("/other/topic"));
-        assert!(!filter.matches("/camera/other"));
-    }
-
-    #[test]
-    fn test_exclude_filter() {
-        let filter = TopicFilter::exclude(["/diagnostics".to_string(), "/rosout".to_string()]);
-
-        assert!(!filter.matches("/diagnostics"));
-        assert!(!filter.matches("/rosout"));
-        assert!(filter.matches("/camera/image"));
-        assert!(filter.matches("/lidar/points"));
-    }
-
-    #[test]
-    fn test_empty_include_filter() {
-        let filter = TopicFilter::include(std::iter::empty::<String>());
-        assert!(!filter.matches("/any/topic"));
-    }
-
-    #[test]
-    fn test_empty_exclude_filter() {
-        let filter = TopicFilter::exclude(std::iter::empty::<String>());
-        assert!(filter.matches("/any/topic"));
-    }
-
-    #[test]
-    fn test_default_filter() {
-        let filter = TopicFilter::default();
-        assert!(filter.matches("/any/topic"));
-        assert_eq!(filter, TopicFilter::All);
-    }
-
-    #[test]
-    fn test_clone_and_equality() {
-        let filter1 = TopicFilter::include(["/topic1".to_string()]);
-        let filter2 = filter1.clone();
-        assert_eq!(filter1, filter2);
-
-        let filter3 = TopicFilter::exclude(["/topic2".to_string()]);
-        assert_ne!(filter1, filter3);
+        Self {
+            include_topic_names: None,
+            exclude_topic_names: None,
+            start_time: None,
+            end_time: None,
+        }
     }
 }

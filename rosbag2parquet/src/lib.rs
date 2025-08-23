@@ -21,11 +21,11 @@ use crate::ros::CdrRosParser;
 use crate::ros::Message;
 
 pub use cdr::Endianness;
-pub use config::{Config, TopicFilter};
+pub use config::{Config, MessageFilter};
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
 pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) {
-    let record_batches = rosbag2record_batches(path, config.topic_filter()).unwrap();
+    let record_batches = rosbag2record_batches(path, config.message_filter()).unwrap();
     let output_dir = config
         .output_dir()
         .cloned()
@@ -35,7 +35,7 @@ pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) {
 
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     path: &P,
-    topic_filter: &TopicFilter,
+    message_filter: &MessageFilter,
 ) -> Result<HashMap<String, RecordBatch>> {
     let mcap_file = read_mcap(path)?;
 
@@ -52,7 +52,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         };
 
         let topic_name = &message.channel.topic;
-        if !topic_filter.matches(topic_name) {
+        if !message_filter.matches(&message) {
             continue;
         }
         if schema.data.is_empty() {
@@ -84,15 +84,20 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         MessageStream::new(&mcap_file).context("Failed to create message stream")?;
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+
+        if !message_filter.matches(&message) {
+            continue;
+        }
+
         let Some(schema) = &message.channel.schema else {
             continue;
         };
 
-        let topic = &message.channel.topic;
-        if schema.data.is_empty() || !topic_name_type_table.contains_key(topic) {
+        let topic_name = &message.channel.topic;
+        if schema.data.is_empty() || !topic_name_type_table.contains_key(topic_name) {
             continue;
         }
-        parser.parse(topic.clone(), &message.data, message.log_time as i64);
+        parser.parse(topic_name.clone(), &message.data, message.log_time as i64);
     }
 
     let record_batches = parser.finish();
@@ -415,7 +420,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(&test_path, &TopicFilter::all()).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, &MessageFilter::default()).unwrap();
 
         let twist_batch = record_batches
             .get("/one_shot/twist")
@@ -464,7 +469,7 @@ mod tests {
     #[test]
     fn test_cdr_arrow_parser_array() {
         let test_path = "../testdata/array_msgs/array_msgs_0.mcap";
-        let record_batches = rosbag2record_batches(&test_path, &TopicFilter::all()).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, &MessageFilter::default()).unwrap();
 
         let imu_batch = record_batches.get("/one_shot/imu").unwrap();
 
@@ -653,14 +658,16 @@ mod tests {
         let mut topic_names = HashSet::new();
         topic_names.insert("/livox/imu".to_string());
         let test_path = "../testdata/r3live/hku_park_00_0.mcap";
-        let _record_batches = rosbag2record_batches(&test_path, &TopicFilter::all()).unwrap();
+        let _record_batches = rosbag2record_batches(&test_path, &MessageFilter::default()).unwrap();
     }
 
     #[test]
     fn test_topic_filter_include() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
-        let filter = TopicFilter::include(["/one_shot/vector3".to_string()]);
-        let record_batches = rosbag2record_batches(&test_path, &filter).unwrap();
+        let mut message_filter = MessageFilter::default();
+        message_filter
+            .set_include_topic_names(Some(HashSet::from(["/one_shot/vector3".to_string()])));
+        let record_batches = rosbag2record_batches(&test_path, &message_filter).unwrap();
 
         assert!(record_batches.contains_key("/one_shot/vector3"));
         assert!(!record_batches.contains_key("/one_shot/twist"));
@@ -670,8 +677,10 @@ mod tests {
     #[test]
     fn test_topic_filter_exclude() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
-        let filter = TopicFilter::exclude(["/one_shot/vector3".to_string()]);
-        let record_batches = rosbag2record_batches(&test_path, &filter).unwrap();
+        let mut message_filter = MessageFilter::default();
+        message_filter
+            .set_exclude_topic_names(Some(HashSet::from(["/one_shot/vector3".to_string()])));
+        let record_batches = rosbag2record_batches(&test_path, &message_filter).unwrap();
 
         assert!(!record_batches.contains_key("/one_shot/vector3"));
         assert!(record_batches.contains_key("/one_shot/twist"));
@@ -681,8 +690,7 @@ mod tests {
     #[test]
     fn test_topic_filter_all() {
         let test_path = "../testdata/base_msgs/base_msgs_0.mcap";
-        let filter = TopicFilter::all();
-        let record_batches = rosbag2record_batches(&test_path, &filter).unwrap();
+        let record_batches = rosbag2record_batches(&test_path, &MessageFilter::default()).unwrap();
 
         assert!(record_batches.contains_key("/one_shot/vector3"));
         assert!(record_batches.contains_key("/one_shot/twist"));
