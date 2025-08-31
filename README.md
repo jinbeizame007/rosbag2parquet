@@ -5,18 +5,12 @@
 </div>
 
 <div align="center">
-  <a href="https://github.com/jinbeizame007/rosbag2parquet/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/github/actions/workflow/status/jinbeizame007/rosbag2parquet/ci.yml"/>
-  </a>
-  <a href="https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/LICENSE-MIT-blue"/>
-  </a>
-  <a href="[https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE](https://github.com/jinbeizame007/rosbag2parquet)">
-    <img src="https://img.shields.io/badge/status-alpha-red"/>
-  </a>
-</div>
 
-<br>
+[![CI](https://img.shields.io/github/actions/workflow/status/jinbeizame007/rosbag2parquet/ci.yml)](https://github.com/jinbeizame007/rosbag2parquet/actions/workflows/ci.yml)
+[![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue)](https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE)
+[![STATUS](https://img.shields.io/badge/status-alpha-red)](https://github.com/jinbeizame007/rosbag2parquet)
+
+</div>
 
 A ROS-independent CLI to convert ROS2 bag files (MCAP format) to Apache Parquet.
 
