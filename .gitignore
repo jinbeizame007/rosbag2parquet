@@ -1,1 +1,25 @@
-/target
+*.so
+*.pyd
+*.pdb
+.ENV
+.env
+.python-version
+
+# OS
+.DS_Store
+
+# IDE
+.vscode/
+
+# Python
+.ruff_cache/
+.venv*/
+__pycache__/
+.coverage
+
+# Rust
+target/
+
+# Data
+*.mcap
+*.parquet
