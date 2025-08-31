@@ -77,7 +77,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct MessageFilter {
     include_topic_names: Option<HashSet<String>>,
     exclude_topic_names: Option<HashSet<String>>,
@@ -124,16 +124,5 @@ impl MessageFilter {
             }
         }
         true
-    }
-}
-
-impl Default for MessageFilter {
-    fn default() -> Self {
-        Self {
-            include_topic_names: None,
-            exclude_topic_names: None,
-            start_time: None,
-            end_time: None,
-        }
     }
 }
