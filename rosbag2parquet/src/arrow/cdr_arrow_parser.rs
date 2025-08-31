@@ -55,7 +55,9 @@ impl<'a> CdrArrowParser<'a> {
     }
 
     pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) -> Result<()> {
-        let type_name = self.topic_name_type_table.get(&topic_name)
+        let type_name = self
+            .topic_name_type_table
+            .get(&topic_name)
             .ok_or_else(|| anyhow::anyhow!("Unknown topic: {}", topic_name))?;
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
@@ -76,11 +78,17 @@ impl<'a> CdrArrowParser<'a> {
             .cloned()
             .collect::<Vec<_>>();
         for name in keys {
-            let type_name = self.topic_name_type_table.get(&name)
+            let type_name = self
+                .topic_name_type_table
+                .get(&name)
                 .ok_or_else(|| anyhow::anyhow!("Type name not found for topic: {}", name))?;
-            let schema = self.schemas.get(type_name.as_str())
+            let schema = self
+                .schemas
+                .get(type_name.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Schema not found for type: {}", type_name))?;
-            let mut builders = self.array_builders_table.remove(&name)
+            let mut builders = self
+                .array_builders_table
+                .remove(&name)
                 .ok_or_else(|| anyhow::anyhow!("Array builders not found for topic: {}", name))?;
             let built_array = builders
                 .iter_mut()
@@ -174,9 +182,15 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         let msg_definition = self
             .msg_definition_table
             .get(self.type_name.as_str())
-            .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", self.type_name))?;
-        let mut array_builders = self.array_builders_table.remove(&self.topic_name)
-            .ok_or_else(|| anyhow::anyhow!("Array builders not found for topic: {}", self.topic_name))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Message definition not found for type: {}", self.type_name)
+            })?;
+        let mut array_builders = self
+            .array_builders_table
+            .remove(&self.topic_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!("Array builders not found for topic: {}", self.topic_name)
+            })?;
 
         let timestamp_builder = array_builders[0]
             .as_any_mut()
@@ -197,7 +211,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_field(&mut self, field: &FieldDefinition<'a>, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+    fn parse_field(
+        &mut self,
+        field: &FieldDefinition<'a>,
+        array_builder: &mut dyn ArrayBuilder,
+    ) -> Result<()> {
         match &field.data_type {
             FieldType::Array { data_type, length } => {
                 self.parse_array(data_type, length, array_builder)
@@ -235,7 +253,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_array_char(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) -> Result<()> {
+    fn parse_array_char(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        length: &u32,
+    ) -> Result<()> {
         let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
         for _ in 0..*length as usize {
             string_builder
@@ -246,7 +268,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_array_string(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) -> Result<()> {
+    fn parse_array_string(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        length: &u32,
+    ) -> Result<()> {
         let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
         for _ in 0..*length as usize {
             string_builder
@@ -272,7 +298,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_sequence(&mut self, data_type: &BaseType, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+    fn parse_sequence(
+        &mut self,
+        data_type: &BaseType,
+        array_builder: &mut dyn ArrayBuilder,
+    ) -> Result<()> {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
                 Primitive::Bool => self.parse_sequence_bool(array_builder)?,
@@ -321,7 +351,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_sequence_complex(&mut self, array_builder: &mut dyn ArrayBuilder, name: &str) -> Result<()> {
+    fn parse_sequence_complex(
+        &mut self,
+        array_builder: &mut dyn ArrayBuilder,
+        name: &str,
+    ) -> Result<()> {
         let length = self.cdr_deserializer.read_sequence_length()?;
 
         let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
@@ -338,7 +372,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_base_type(&mut self, base_type: &BaseType, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+    fn parse_base_type(
+        &mut self,
+        base_type: &BaseType,
+        array_builder: &mut dyn ArrayBuilder,
+    ) -> Result<()> {
         match base_type {
             BaseType::Primitive(primitive) => self.parse_primitive(primitive, array_builder)?,
             BaseType::Complex(name) => self.parse_complex(name, array_builder)?,
@@ -347,8 +385,9 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     }
 
     fn parse_complex(&mut self, name: &str, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
-        let msg_definition = self.msg_definition_table.get(name)
-            .ok_or_else(|| anyhow::anyhow!("Message definition not found for complex type: {}", name))?;
+        let msg_definition = self.msg_definition_table.get(name).ok_or_else(|| {
+            anyhow::anyhow!("Message definition not found for complex type: {}", name)
+        })?;
         let struct_builder = array_builder
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
@@ -369,7 +408,11 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         Ok(())
     }
 
-    fn parse_primitive(&mut self, primitive: &Primitive, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+    fn parse_primitive(
+        &mut self,
+        primitive: &Primitive,
+        array_builder: &mut dyn ArrayBuilder,
+    ) -> Result<()> {
         match primitive {
             Primitive::Bool => self.parse_bool(array_builder)?,
             Primitive::Byte => self.parse_u8(array_builder)?,
