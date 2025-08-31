@@ -164,17 +164,18 @@ macro_rules! impl_parse_sequence_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_sequence_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) {
-                    let length = self.cdr_deserializer.read_sequence_length();
+                fn [<parse_sequence_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) -> anyhow::Result<()> {
+                    let length = self.cdr_deserializer.read_sequence_length()?;
 
                     let mut values = Vec::<$value_type>::with_capacity(length as usize);
                     for _i in 0..length as usize {
-                        values.push(self.cdr_deserializer.[<deserialize_$short_name>]());
+                        values.push(self.cdr_deserializer.[<deserialize_$short_name>]()?);
                     }
 
                     let list_builder = $crate::arrow::core::downcast_list_builder::<$builder_type>(builder);
                     list_builder.values().append_slice(&values);
                     list_builder.append(true);
+                    Ok(())
                 }
             }
         )*
@@ -185,18 +186,19 @@ macro_rules! impl_parse_array_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, length: &u32) {
+                fn [<parse_array_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder, length: &u32) -> anyhow::Result<()> {
                     let mut values = Vec::<$value_type>::with_capacity(*length as usize);
                     for _i in 0..*length as usize {
-                        values.push(self.cdr_deserializer.[<deserialize_ $short_name>]());
+                        values.push(self.cdr_deserializer.[<deserialize_ $short_name>]()?);
                     }
 
                     let array_builder = builder
                         .as_any_mut()
                         .downcast_mut::<FixedSizeListBuilder<$builder_type>>()
-                        .unwrap();
+                        .ok_or_else(|| anyhow::anyhow!("Failed to downcast to FixedSizeListBuilder"))?;
                     array_builder.values().append_slice(&values);
                     array_builder.append(true);
+                    Ok(())
                 }
             }
         )*
@@ -207,11 +209,12 @@ macro_rules! impl_parse_primitive_typed {
     ($($short_name:ident => $builder_type:ident => $value_type:ty),* $(,)?) => {
         $(
             paste::paste! {
-                fn [<parse_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) {
+                fn [<parse_ $short_name>](&mut self, builder: &mut dyn ArrayBuilder) -> anyhow::Result<()> {
                     let typed_builder = builder.as_any_mut()
                         .downcast_mut::<$builder_type>()
-                        .unwrap();
-                    typed_builder.append_value(self.cdr_deserializer.[<deserialize_ $short_name>]());
+                        .ok_or_else(|| anyhow::anyhow!("Failed to downcast to {}", stringify!($builder_type)))?;
+                    typed_builder.append_value(self.cdr_deserializer.[<deserialize_ $short_name>]()?);
+                    Ok(())
                 }
             }
         )*

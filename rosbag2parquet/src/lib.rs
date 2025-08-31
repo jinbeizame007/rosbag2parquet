@@ -97,10 +97,16 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         if schema.data.is_empty() || !topic_name_type_table.contains_key(topic_name) {
             continue;
         }
-        parser.parse(topic_name.clone(), &message.data, message.log_time as i64);
+        if let Err(e) = parser.parse(topic_name.clone(), &message.data, message.log_time as i64) {
+            eprintln!(
+                "Warning: Failed to parse message {} on topic {}: {}",
+                index, topic_name, e
+            );
+            continue;
+        }
     }
 
-    let record_batches = parser.finish();
+    let record_batches = parser.finish()?;
 
     Ok(record_batches)
 }
@@ -176,7 +182,11 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_ros_parser.parse(&type_name, &message.data);
+            let parsed_message = cdr_ros_parser
+                .parse(&type_name, &message.data)
+                .with_context(|| {
+                    format!("Failed to parse message {} with type {}", index, type_name)
+                })?;
             parsed_messages.push(parsed_message);
         }
     }

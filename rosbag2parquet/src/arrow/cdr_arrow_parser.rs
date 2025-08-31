@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, StringBuilder, StructBuilder,
@@ -36,7 +37,7 @@ impl<'a> CdrArrowParser<'a> {
                     topic_name.to_string(),
                     schemas
                         .get(type_name.as_str())
-                        .unwrap()
+                        .expect("Schema not found during initialization")
                         .fields()
                         .iter()
                         .map(|field| create_array_builder(field.data_type()))
@@ -53,8 +54,9 @@ impl<'a> CdrArrowParser<'a> {
         }
     }
 
-    pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) {
-        let type_name = self.topic_name_type_table.get(&topic_name).unwrap();
+    pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) -> Result<()> {
+        let type_name = self.topic_name_type_table.get(&topic_name)
+            .ok_or_else(|| anyhow::anyhow!("Unknown topic: {}", topic_name))?;
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
             self.msg_definition_table,
@@ -63,10 +65,10 @@ impl<'a> CdrArrowParser<'a> {
             data,
             timestamp_ns,
         );
-        single_message_parser.parse();
+        single_message_parser.parse()
     }
 
-    pub fn finish(&mut self) -> HashMap<String, RecordBatch> {
+    pub fn finish(&mut self) -> Result<HashMap<String, RecordBatch>> {
         let mut batches = HashMap::new();
         let keys = self
             .array_builders_table
@@ -74,18 +76,22 @@ impl<'a> CdrArrowParser<'a> {
             .cloned()
             .collect::<Vec<_>>();
         for name in keys {
-            let type_name = self.topic_name_type_table.get(&name).unwrap();
-            let schema = self.schemas.get(type_name.as_str()).unwrap();
-            let mut builders = self.array_builders_table.remove(&name).unwrap();
+            let type_name = self.topic_name_type_table.get(&name)
+                .ok_or_else(|| anyhow::anyhow!("Type name not found for topic: {}", name))?;
+            let schema = self.schemas.get(type_name.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Schema not found for type: {}", type_name))?;
+            let mut builders = self.array_builders_table.remove(&name)
+                .ok_or_else(|| anyhow::anyhow!("Array builders not found for topic: {}", name))?;
             let built_array = builders
                 .iter_mut()
                 .map(|builder| builder.finish())
                 .collect::<Vec<_>>();
-            let batch = RecordBatch::try_new(schema.clone(), built_array);
-            batches.insert(name.to_string(), batch.unwrap());
+            let batch = RecordBatch::try_new(schema.clone(), built_array)
+                .with_context(|| format!("Failed to create RecordBatch for topic: {}", name))?;
+            batches.insert(name.to_string(), batch);
         }
 
-        batches
+        Ok(batches)
     }
 }
 
@@ -160,21 +166,22 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         string => StringBuilder => String,
     }
 
-    pub fn parse(&mut self) {
-        self.parse_without_header();
+    pub fn parse(&mut self) -> Result<()> {
+        self.parse_without_header()
     }
 
-    fn parse_without_header(&mut self) {
+    fn parse_without_header(&mut self) -> Result<()> {
         let msg_definition = self
             .msg_definition_table
             .get(self.type_name.as_str())
-            .unwrap();
-        let mut array_builders = self.array_builders_table.remove(&self.topic_name).unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", self.type_name))?;
+        let mut array_builders = self.array_builders_table.remove(&self.topic_name)
+            .ok_or_else(|| anyhow::anyhow!("Array builders not found for topic: {}", self.topic_name))?;
 
         let timestamp_builder = array_builders[0]
             .as_any_mut()
             .downcast_mut::<TimestampNanosecondBuilder>()
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast timestamp builder"))?;
         timestamp_builder.append_value(self.timestamp_ns);
 
         for (array_builder, field) in array_builders
@@ -182,14 +189,15 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .skip(1)
             .zip(msg_definition.fields.iter())
         {
-            self.parse_field(field, array_builder);
+            self.parse_field(field, array_builder)?;
         }
 
         self.array_builders_table
             .insert(self.topic_name.clone(), array_builders);
+        Ok(())
     }
 
-    fn parse_field(&mut self, field: &FieldDefinition<'a>, array_builder: &mut dyn ArrayBuilder) {
+    fn parse_field(&mut self, field: &FieldDefinition<'a>, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         match &field.data_type {
             FieldType::Array { data_type, length } => {
                 self.parse_array(data_type, length, array_builder)
@@ -204,46 +212,49 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         data_type: &BaseType,
         length: &u32,
         array_builder: &mut dyn ArrayBuilder,
-    ) {
+    ) -> Result<()> {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
-                Primitive::Bool => self.parse_array_bool(array_builder, length),
-                Primitive::Byte => self.parse_array_u8(array_builder, length),
-                Primitive::Char => self.parse_array_char(array_builder, length),
-                Primitive::Float32 => self.parse_array_f32(array_builder, length),
-                Primitive::Float64 => self.parse_array_f64(array_builder, length),
-                Primitive::Int8 => self.parse_array_i8(array_builder, length),
-                Primitive::UInt8 => self.parse_array_u8(array_builder, length),
-                Primitive::Int16 => self.parse_array_i16(array_builder, length),
-                Primitive::UInt16 => self.parse_array_u16(array_builder, length),
-                Primitive::Int32 => self.parse_array_i32(array_builder, length),
-                Primitive::UInt32 => self.parse_array_u32(array_builder, length),
-                Primitive::Int64 => self.parse_array_i64(array_builder, length),
-                Primitive::UInt64 => self.parse_array_u64(array_builder, length),
-                Primitive::String => self.parse_array_string(array_builder, length),
+                Primitive::Bool => self.parse_array_bool(array_builder, length)?,
+                Primitive::Byte => self.parse_array_u8(array_builder, length)?,
+                Primitive::Char => self.parse_array_char(array_builder, length)?,
+                Primitive::Float32 => self.parse_array_f32(array_builder, length)?,
+                Primitive::Float64 => self.parse_array_f64(array_builder, length)?,
+                Primitive::Int8 => self.parse_array_i8(array_builder, length)?,
+                Primitive::UInt8 => self.parse_array_u8(array_builder, length)?,
+                Primitive::Int16 => self.parse_array_i16(array_builder, length)?,
+                Primitive::UInt16 => self.parse_array_u16(array_builder, length)?,
+                Primitive::Int32 => self.parse_array_i32(array_builder, length)?,
+                Primitive::UInt32 => self.parse_array_u32(array_builder, length)?,
+                Primitive::Int64 => self.parse_array_i64(array_builder, length)?,
+                Primitive::UInt64 => self.parse_array_u64(array_builder, length)?,
+                Primitive::String => self.parse_array_string(array_builder, length)?,
             },
-            BaseType::Complex(name) => self.parse_array_complex(array_builder, name, length),
+            BaseType::Complex(name) => self.parse_array_complex(array_builder, name, length)?,
         }
+        Ok(())
     }
 
-    fn parse_array_char(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) {
+    fn parse_array_char(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) -> Result<()> {
         let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
         for _ in 0..*length as usize {
             string_builder
                 .values()
-                .append_value(self.cdr_deserializer.deserialize_char().to_string());
+                .append_value(self.cdr_deserializer.deserialize_char()?.to_string());
         }
         string_builder.append(true);
+        Ok(())
     }
 
-    fn parse_array_string(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) {
+    fn parse_array_string(&mut self, array_builder: &mut dyn ArrayBuilder, length: &u32) -> Result<()> {
         let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
         for _ in 0..*length as usize {
             string_builder
                 .values()
-                .append_value(self.cdr_deserializer.deserialize_string());
+                .append_value(self.cdr_deserializer.deserialize_string()?);
         }
         string_builder.append(true);
+        Ok(())
     }
 
     fn parse_array_complex(
@@ -251,128 +262,138 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         array_builder: &mut dyn ArrayBuilder,
         name: &str,
         length: &u32,
-    ) {
+    ) -> Result<()> {
         let substruct_builder = downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
 
         for _ in 0..*length as usize {
-            self.parse_complex(name, substruct_builder);
+            self.parse_complex(name, substruct_builder)?;
         }
         substruct_builder.append(true);
+        Ok(())
     }
 
-    fn parse_sequence(&mut self, data_type: &BaseType, array_builder: &mut dyn ArrayBuilder) {
+    fn parse_sequence(&mut self, data_type: &BaseType, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         match data_type {
             BaseType::Primitive(primitive) => match primitive {
-                Primitive::Bool => self.parse_sequence_bool(array_builder),
-                Primitive::Byte => self.parse_sequence_u8(array_builder),
-                Primitive::Char => self.parse_sequence_char(array_builder),
-                Primitive::Float32 => self.parse_sequence_f32(array_builder),
-                Primitive::Float64 => self.parse_sequence_f64(array_builder),
-                Primitive::Int8 => self.parse_sequence_i8(array_builder),
-                Primitive::UInt8 => self.parse_sequence_u8(array_builder),
-                Primitive::Int16 => self.parse_sequence_i16(array_builder),
-                Primitive::UInt16 => self.parse_sequence_u16(array_builder),
-                Primitive::Int32 => self.parse_sequence_i32(array_builder),
-                Primitive::UInt32 => self.parse_sequence_u32(array_builder),
-                Primitive::Int64 => self.parse_sequence_i64(array_builder),
-                Primitive::UInt64 => self.parse_sequence_u64(array_builder),
-                Primitive::String => self.parse_sequence_string(array_builder),
+                Primitive::Bool => self.parse_sequence_bool(array_builder)?,
+                Primitive::Byte => self.parse_sequence_u8(array_builder)?,
+                Primitive::Char => self.parse_sequence_char(array_builder)?,
+                Primitive::Float32 => self.parse_sequence_f32(array_builder)?,
+                Primitive::Float64 => self.parse_sequence_f64(array_builder)?,
+                Primitive::Int8 => self.parse_sequence_i8(array_builder)?,
+                Primitive::UInt8 => self.parse_sequence_u8(array_builder)?,
+                Primitive::Int16 => self.parse_sequence_i16(array_builder)?,
+                Primitive::UInt16 => self.parse_sequence_u16(array_builder)?,
+                Primitive::Int32 => self.parse_sequence_i32(array_builder)?,
+                Primitive::UInt32 => self.parse_sequence_u32(array_builder)?,
+                Primitive::Int64 => self.parse_sequence_i64(array_builder)?,
+                Primitive::UInt64 => self.parse_sequence_u64(array_builder)?,
+                Primitive::String => self.parse_sequence_string(array_builder)?,
             },
-            BaseType::Complex(name) => self.parse_sequence_complex(array_builder, name),
+            BaseType::Complex(name) => self.parse_sequence_complex(array_builder, name)?,
         }
+        Ok(())
     }
 
-    fn parse_sequence_char(&mut self, array_builder: &mut dyn ArrayBuilder) {
-        let length = self.cdr_deserializer.read_sequence_length();
+    fn parse_sequence_char(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+        let length = self.cdr_deserializer.read_sequence_length()?;
 
         let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
         for _ in 0..length as usize {
             string_builder
                 .values()
-                .append_value(self.cdr_deserializer.deserialize_char().to_string());
+                .append_value(self.cdr_deserializer.deserialize_char()?.to_string());
         }
         string_builder.append(true);
+        Ok(())
     }
 
-    fn parse_sequence_string(&mut self, array_builder: &mut dyn ArrayBuilder) {
-        let length = self.cdr_deserializer.read_sequence_length();
+    fn parse_sequence_string(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+        let length = self.cdr_deserializer.read_sequence_length()?;
 
         let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
         for _ in 0..length as usize {
             string_builder
                 .values()
-                .append_value(self.cdr_deserializer.deserialize_string());
+                .append_value(self.cdr_deserializer.deserialize_string()?);
         }
         string_builder.append(true);
+        Ok(())
     }
 
-    fn parse_sequence_complex(&mut self, array_builder: &mut dyn ArrayBuilder, name: &str) {
-        let length = self.cdr_deserializer.read_sequence_length();
+    fn parse_sequence_complex(&mut self, array_builder: &mut dyn ArrayBuilder, name: &str) -> Result<()> {
+        let length = self.cdr_deserializer.read_sequence_length()?;
 
         let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
         let substruct_builder = list_builder
             .values()
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructBuilder"))?;
 
         for _ in 0..length as usize {
-            self.parse_complex(name, substruct_builder);
+            self.parse_complex(name, substruct_builder)?;
         }
         list_builder.append(true);
+        Ok(())
     }
 
-    fn parse_base_type(&mut self, base_type: &BaseType, array_builder: &mut dyn ArrayBuilder) {
+    fn parse_base_type(&mut self, base_type: &BaseType, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         match base_type {
-            BaseType::Primitive(primitive) => self.parse_primitive(primitive, array_builder),
-            BaseType::Complex(name) => self.parse_complex(name, array_builder),
+            BaseType::Primitive(primitive) => self.parse_primitive(primitive, array_builder)?,
+            BaseType::Complex(name) => self.parse_complex(name, array_builder)?,
         }
+        Ok(())
     }
 
-    fn parse_complex(&mut self, name: &str, array_builder: &mut dyn ArrayBuilder) {
-        let msg_definition = self.msg_definition_table.get(name).unwrap();
+    fn parse_complex(&mut self, name: &str, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
+        let msg_definition = self.msg_definition_table.get(name)
+            .ok_or_else(|| anyhow::anyhow!("Message definition not found for complex type: {}", name))?;
         let struct_builder = array_builder
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
-            .unwrap();
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructBuilder"))?;
 
         for (i, field_builder) in struct_builder.field_builders_mut().iter_mut().enumerate() {
             let field = &msg_definition.fields[i];
             match &field.data_type {
                 FieldType::Array { data_type, length } => {
-                    self.parse_array(data_type, length, field_builder)
+                    self.parse_array(data_type, length, field_builder)?
                 }
-                FieldType::Sequence(base_type) => self.parse_sequence(base_type, field_builder),
-                FieldType::Base(base_type) => self.parse_base_type(base_type, field_builder),
+                FieldType::Sequence(base_type) => self.parse_sequence(base_type, field_builder)?,
+                FieldType::Base(base_type) => self.parse_base_type(base_type, field_builder)?,
             }
         }
 
         struct_builder.append(true);
+        Ok(())
     }
 
-    fn parse_primitive(&mut self, primitive: &Primitive, array_builder: &mut dyn ArrayBuilder) {
+    fn parse_primitive(&mut self, primitive: &Primitive, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         match primitive {
-            Primitive::Bool => self.parse_bool(array_builder),
-            Primitive::Byte => self.parse_u8(array_builder),
-            Primitive::Char => self.parse_char(array_builder),
-            Primitive::Float32 => self.parse_f32(array_builder),
-            Primitive::Float64 => self.parse_f64(array_builder),
-            Primitive::Int8 => self.parse_i8(array_builder),
-            Primitive::UInt8 => self.parse_u8(array_builder),
-            Primitive::Int16 => self.parse_i16(array_builder),
-            Primitive::UInt16 => self.parse_u16(array_builder),
-            Primitive::Int32 => self.parse_i32(array_builder),
-            Primitive::UInt32 => self.parse_u32(array_builder),
-            Primitive::Int64 => self.parse_i64(array_builder),
-            Primitive::UInt64 => self.parse_u64(array_builder),
-            Primitive::String => self.parse_string(array_builder),
+            Primitive::Bool => self.parse_bool(array_builder)?,
+            Primitive::Byte => self.parse_u8(array_builder)?,
+            Primitive::Char => self.parse_char(array_builder)?,
+            Primitive::Float32 => self.parse_f32(array_builder)?,
+            Primitive::Float64 => self.parse_f64(array_builder)?,
+            Primitive::Int8 => self.parse_i8(array_builder)?,
+            Primitive::UInt8 => self.parse_u8(array_builder)?,
+            Primitive::Int16 => self.parse_i16(array_builder)?,
+            Primitive::UInt16 => self.parse_u16(array_builder)?,
+            Primitive::Int32 => self.parse_i32(array_builder)?,
+            Primitive::UInt32 => self.parse_u32(array_builder)?,
+            Primitive::Int64 => self.parse_i64(array_builder)?,
+            Primitive::UInt64 => self.parse_u64(array_builder)?,
+            Primitive::String => self.parse_string(array_builder)?,
         }
+        Ok(())
     }
 
-    fn parse_char(&mut self, array_builder: &mut dyn ArrayBuilder) {
+    fn parse_char(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         let byte_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
         byte_builder
             .values()
-            .append_value(self.cdr_deserializer.deserialize_char().to_string());
+            .append_value(self.cdr_deserializer.deserialize_char()?.to_string());
+        Ok(())
     }
 }
