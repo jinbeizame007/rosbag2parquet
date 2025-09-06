@@ -1,4 +1,8 @@
+<div align="center">
+
 # rosbag2parquet
+
+</div>
 
 <div align="center">
     <img src="media/logo1.png" alt="siras" width="40%">
@@ -6,15 +10,15 @@
 
 <div align="center">
 
-[![CI](https://img.shields.io/github/actions/workflow/status/jinbeizame007/rosbag2parquet/ci.yml)](https://github.com/jinbeizame007/rosbag2parquet/actions/workflows/ci.yml)
-[![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue)](https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE)
-[![STATUS](https://img.shields.io/badge/status-alpha-red)](https://github.com/jinbeizame007/rosbag2parquet)
-
-</div>
-
 A ROS-independent CLI to convert ROS2 bag files (MCAP format) to Apache Parquet.
 
-⚠️ **Work In Progress**: This package is currently in alpha development. APIs may change.
+[![CI](https://img.shields.io/github/actions/workflow/status/jinbeizame007/rosbag2parquet/ci.yml?style=flat-square)](https://github.com/jinbeizame007/rosbag2parquet/actions/workflows/ci.yml)
+[![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue?style=flat-square)](https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE)
+[![STATUS](https://img.shields.io/badge/status-alpha-red?style=flat-square)](https://github.com/jinbeizame007/rosbag2parquet)
+
+*This repository is still under development! Specifications are subject to change without notice.*
+
+</div>
 
 ## CLI
 
