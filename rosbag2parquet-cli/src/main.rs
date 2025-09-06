@@ -13,33 +13,48 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Convert {
-        #[arg(help = "Path to the MCAP file")]
+        /// Path to the MCAP file
+        #[arg()]
         input: Utf8PathBuf,
 
+        /// Space-separated list of topic to include
         #[arg(
             long,
-            help = "Space-separated list of topics to include",
             num_args = 1..,
         )]
         topics: Vec<String>,
 
+        /// Space-separated list of topic to exclude
         #[arg(
             long,
-            help = "Space-separated list of topics to exclude",
             num_args = 1..,
         )]
         exclude: Vec<String>,
 
-        #[arg(long, help = "Start time of the messages to include")]
+        /// Start time [ns] of the messages to include
+        #[arg(long)]
         start_time: Option<u64>,
 
-        #[arg(long, help = "End time of the messages to include")]
+        /// End time [ns] of the messages to include
+        #[arg(long)]
         end_time: Option<u64>,
 
-        #[arg(long, help = "Output directory for the converted Parquet files")]
+        /// Output directory for the converted Parquet files
+        #[arg(long)]
         output_dir: Option<Utf8PathBuf>,
 
-        #[arg(long, help = "Compression algorithm to use")]
+        /// Compression algorithm to use
+        ///
+        /// Available options are:
+        /// - UNCOMPRESSED
+        /// - SNAPPY
+        /// - GZIP(GzipLevel({0 - 9}))
+        /// - LZO
+        /// - BROTLI(BrotliLevel({0 - 11}))
+        /// - LZ4
+        /// - ZSTD(ZstdLevel({1 - 22})):
+        /// - LZ4_RAW
+        #[arg(long, verbatim_doc_comment, default_value = "SNAPPY")]
         compression: Option<String>,
     },
 }
