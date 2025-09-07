@@ -142,6 +142,7 @@ pub fn downcast_list_builder<B>(builder: &mut dyn ArrayBuilder) -> &mut ListBuil
 where
     B: ArrayBuilder,
 {
+    debug_assert!(builder.as_any_mut().is::<ListBuilder<B>>());
     builder
         .as_any_mut()
         .downcast_mut::<ListBuilder<B>>()
@@ -154,6 +155,7 @@ pub fn downcast_fixed_size_list_builder<B>(
 where
     B: ArrayBuilder,
 {
+    debug_assert!(builder.as_any_mut().is::<FixedSizeListBuilder<B>>());
     builder
         .as_any_mut()
         .downcast_mut::<FixedSizeListBuilder<B>>()

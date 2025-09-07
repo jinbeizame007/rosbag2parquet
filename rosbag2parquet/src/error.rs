@@ -16,7 +16,11 @@ pub enum Rosbag2ParquetError {
     Utf8(#[from] std::str::Utf8Error),
 
     #[error("Parse error in topic '{topic}' at message {index}: {message}")]
-    ParseError { topic: String, index: usize, message: String },
+    ParseError {
+        topic: String,
+        index: usize,
+        message: String,
+    },
 
     #[error("Schema error for type '{type_name}': {message}")]
     SchemaError { type_name: String, message: String },

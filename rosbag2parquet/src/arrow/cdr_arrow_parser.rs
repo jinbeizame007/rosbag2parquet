@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::error::Result;
 use anyhow::Context;
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
@@ -9,7 +10,6 @@ use arrow::array::{
 };
 use arrow::datatypes::Schema;
 use arrow_array::RecordBatch;
-use crate::error::Result;
 
 use crate::arrow::core::{
     create_array_builder, downcast_fixed_size_list_builder, downcast_list_builder,
@@ -34,12 +34,13 @@ impl<'a> CdrArrowParser<'a> {
         let array_builders_table = topic_name_type_table
             .iter()
             .map(|(topic_name, type_name)| {
-                let schema = schemas
-                    .get(type_name.as_str())
-                    .ok_or_else(|| anyhow::anyhow!(
+                let schema = schemas.get(type_name.as_str()).ok_or_else(|| {
+                    anyhow::anyhow!(
                         "Schema not found during initialization for type: {} (topic: {})",
-                        type_name, topic_name
-                    ))?;
+                        type_name,
+                        topic_name
+                    )
+                })?;
                 Ok((
                     topic_name.to_string(),
                     schema

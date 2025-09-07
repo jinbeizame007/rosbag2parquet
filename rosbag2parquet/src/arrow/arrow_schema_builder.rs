@@ -18,13 +18,12 @@ impl<'a> ArrowSchemaBuilder<'a> {
     }
 
     pub fn build(&self, name: &str) -> Result<Arc<Schema>> {
-        let message_definition = self
-            .message_definition_table
-            .get(name)
-            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+        let message_definition = self.message_definition_table.get(name).ok_or_else(|| {
+            Rosbag2ParquetError::SchemaError {
                 type_name: name.to_string(),
                 message: "Message definition not found".to_string(),
-            })?;
+            }
+        })?;
 
         let mut fields = Vec::new();
         fields.push(Field::new(

@@ -2,8 +2,8 @@ pub mod arrow;
 pub mod cdr;
 pub mod config;
 pub mod core;
-pub mod ros;
 pub mod error;
+pub mod ros;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -27,15 +27,12 @@ pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
 pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()> {
     let record_batches = rosbag2record_batches(path, config.message_filter())?;
-    let output_dir = config
-        .output_dir()
-        .cloned()
-        .unwrap_or_else(|| {
-            path.as_ref()
-                .parent()
-                .map(|p| p.join("parquet"))
-                .unwrap_or_else(|| Utf8PathBuf::from("parquet"))
-        });
+    let output_dir = config.output_dir().cloned().unwrap_or_else(|| {
+        path.as_ref()
+            .parent()
+            .map(|p| p.join("parquet"))
+            .unwrap_or_else(|| Utf8PathBuf::from("parquet"))
+    });
     write_record_batches_to_parquet(record_batches, &output_dir)?;
     Ok(())
 }
@@ -49,9 +46,10 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     let mut type_registry = HashMap::new();
     let mut topic_name_type_table = HashMap::new();
     let mut skipped_topic_names = HashSet::new();
-    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
-        message: format!("Failed to create message stream: {}", e),
-    })?;
+    let message_stream =
+        MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+            message: format!("Failed to create message stream: {}", e),
+        })?;
 
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
@@ -90,18 +88,17 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     }
 
     let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table).build_all()?;
-    let mut parser = CdrArrowParser::new(
-        &topic_name_type_table,
-        &msg_definition_table,
-        &mut schemas,
-    )
-    .map_err(|e| Rosbag2ParquetError::SchemaError {
-        type_name: "unknown".to_string(),
-        message: e.to_string(),
-    })?;
-    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
-        message: format!("Failed to create message stream: {}", e),
-    })?;
+    let mut parser =
+        CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas).map_err(
+            |e| Rosbag2ParquetError::SchemaError {
+                type_name: "unknown".to_string(),
+                message: e.to_string(),
+            },
+        )?;
+    let message_stream =
+        MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+            message: format!("Failed to create message stream: {}", e),
+        })?;
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
             topic: "unknown".to_string(),
@@ -141,16 +138,18 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
 }
 
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
-    let fd = fs::File::open(path.as_ref()).map_err(|e| Rosbag2ParquetError::Io(
-        std::io::Error::new(
+    let fd = fs::File::open(path.as_ref()).map_err(|e| {
+        Rosbag2ParquetError::Io(std::io::Error::new(
             e.kind(),
             format!("Couldn't open MCap file '{}': {}", path.as_ref(), e),
-        ),
-    ))?;
-    unsafe { Mmap::map(&fd) }.map_err(|e| Rosbag2ParquetError::Io(std::io::Error::new(
-        e.kind(),
-        format!("Couldn't map MCap file '{}': {}", path.as_ref(), e),
-    )))
+        ))
+    })?;
+    unsafe { Mmap::map(&fd) }.map_err(|e| {
+        Rosbag2ParquetError::Io(std::io::Error::new(
+            e.kind(),
+            format!("Couldn't map MCap file '{}': {}", path.as_ref(), e),
+        ))
+    })
 }
 
 pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
@@ -164,9 +163,11 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
     for (name, record_batch) in record_batches {
         let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
         let path = Utf8Path::new(&path_string);
-        let dir_path = path.parent().ok_or_else(|| Rosbag2ParquetError::ConfigError {
-            message: format!("Invalid path: {}", path_string),
-        })?;
+        let dir_path = path
+            .parent()
+            .ok_or_else(|| Rosbag2ParquetError::ConfigError {
+                message: format!("Invalid path: {}", path_string),
+            })?;
         if !dir_path.exists() {
             fs::create_dir_all(dir_path)?;
         }
@@ -190,9 +191,10 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     let mcap_file = read_mcap(path)?;
 
     let mut type_registry = HashMap::new();
-    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
-        message: format!("Failed to create message stream: {}", e),
-    })?;
+    let message_stream =
+        MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+            message: format!("Failed to create message stream: {}", e),
+        })?;
 
     for (index, message_result) in message_stream.enumerate() {
         let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
@@ -217,9 +219,10 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     }
 
     let mut parsed_messages = Vec::new();
-    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
-        message: format!("Failed to create message stream: {}", e),
-    })?;
+    let message_stream =
+        MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+            message: format!("Failed to create message stream: {}", e),
+        })?;
 
     let mut cdr_ros_parser = CdrRosParser::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
@@ -231,13 +234,13 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_ros_parser.parse(&type_name, &message.data).map_err(|e| {
-                Rosbag2ParquetError::ParseError {
+            let parsed_message = cdr_ros_parser
+                .parse(&type_name, &message.data)
+                .map_err(|e| Rosbag2ParquetError::ParseError {
                     topic: "unknown".to_string(),
                     index,
                     message: format!("Failed to parse message with type {}: {}", type_name, e),
-                }
-            })?;
+                })?;
             parsed_messages.push(parsed_message);
         }
     }
