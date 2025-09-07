@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
+use crate::error::Result;
 
 use super::data::{BaseValue, Field, FieldValue, Message, PrimitiveValue};
 use super::types::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, StringBuilder, StructBuilder,
@@ -9,6 +9,7 @@ use arrow::array::{
 };
 use arrow::datatypes::Schema;
 use arrow_array::RecordBatch;
+use crate::error::Result;
 
 use crate::arrow::core::{
     create_array_builder, downcast_fixed_size_list_builder, downcast_list_builder,
