@@ -84,7 +84,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
         let sections = ros::parse_schema_sections(type_name, schema_text);
-        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table)?;
     }
 
     let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table).build_all()?;
@@ -215,7 +215,7 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     for (type_name, schema_data) in &type_registry {
         let schema_text = std::str::from_utf8(schema_data)?;
         let sections = ros::parse_schema_sections(type_name, schema_text);
-        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table)?;
     }
 
     let mut parsed_messages = Vec::new();

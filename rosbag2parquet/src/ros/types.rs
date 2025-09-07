@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use nom::error::{Error as NomError, ErrorKind as NomErrorKind};
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -10,6 +11,7 @@ use nom::{
 };
 
 use super::core::{extract_message_type, identifier, is_constant_line};
+use crate::error::{Result, Rosbag2ParquetError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct MessageDefinition<'a> {
@@ -92,8 +94,10 @@ pub fn parse_schema_sections<'a>(
             (schema_name, *raw_section)
         } else {
             let type_name = raw_section.split_whitespace().nth(1).unwrap_or("");
-            let first_newline = raw_section.find('\n').unwrap();
-            let content_without_first_line = &raw_section[first_newline + 1..];
+            let content_without_first_line = match raw_section.find('\n') {
+                Some(pos) => &raw_section[pos + 1..],
+                None => *raw_section,
+            };
             (type_name, content_without_first_line)
         };
 
@@ -107,7 +111,7 @@ pub fn parse_schema_sections<'a>(
 pub fn parse_msg_definition_from_schema_section<'a>(
     schema_sections: &[SchemaSection<'a>],
     msg_definition_table: &mut HashMap<&'a str, MessageDefinition<'a>>,
-) {
+) -> Result<()> {
     for schema_section in schema_sections.iter().rev() {
         let short_name = extract_message_type(schema_section.type_name);
 
@@ -122,38 +126,27 @@ pub fn parse_msg_definition_from_schema_section<'a>(
                 continue;
             }
 
-            let data_type = line
-                .split_whitespace()
-                .next()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Could not extract data type from line: '{}' in section: '{}'",
-                        line, schema_section.type_name
-                    )
-                })
-                .rsplit("/")
-                .next()
-                .unwrap_or_else(|| {
-                    panic!(
-                        "Could not extract type name from data type: '{}' in section: '{}'",
-                        line, schema_section.type_name
-                    )
+            let mut tokens = line.split_whitespace();
+            let Some(data_type_token) = tokens.next() else {
+                return Err(Rosbag2ParquetError::SchemaError {
+                    type_name: schema_section.type_name.to_string(),
+                    message: format!("Could not extract data type from line: '{}'", line),
                 });
-            let name = line.split_whitespace().nth(1).unwrap_or_else(|| {
-                panic!(
-                    "Could not extract field name from line: '{}' in section: '{}'",
-                    line, schema_section.type_name
-                )
-            });
+            };
+            let Some(name) = tokens.next() else {
+                return Err(Rosbag2ParquetError::SchemaError {
+                    type_name: schema_section.type_name.to_string(),
+                    message: format!("Could not extract field name from line: '{}'", line),
+                });
+            };
+            let data_type_atom = data_type_token.rsplit('/').next().unwrap();
 
-            let data_type = ros_data_type(data_type)
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "Failed to parse data type '{}' in section '{}': {}",
-                        data_type, schema_section.type_name, err
-                    )
-                })
-                .1;
+            let Ok((_, data_type)) = ros_data_type(data_type_atom) else {
+                return Err(Rosbag2ParquetError::SchemaError {
+                    type_name: schema_section.type_name.to_string(),
+                    message: format!("Failed to parse data type '{}'", data_type_atom),
+                });
+            };
             let field = FieldDefinition::new(data_type, name);
             fields.push(field);
         }
@@ -161,6 +154,7 @@ pub fn parse_msg_definition_from_schema_section<'a>(
         let msg_definition = MessageDefinition::new(short_name, fields);
         msg_definition_table.insert(short_name, msg_definition);
     }
+    Ok(())
 }
 
 pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
@@ -176,7 +170,13 @@ pub fn ros_data_type(input: &str) -> IResult<&str, FieldType> {
             .split('[')
             .collect::<Vec<&str>>();
         let (rest, data_type) = non_array_ros_data_type(data_type_and_length[0])?;
-        let length = data_type_and_length[1].parse::<u32>().unwrap();
+        let length = match data_type_and_length
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            Some(l) => l,
+            None => return Err(nom::Err::Error(NomError::new(input, NomErrorKind::Digit))),
+        };
         return Ok((rest, FieldType::Array { data_type, length }));
     }
 
@@ -576,7 +576,7 @@ mod tests {
         let schema_text = include_str!("../../../testdata/schema/vector3d.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table).unwrap();
 
         assert_eq!(msg_definition_table.len(), 1);
         assert_eq!(
@@ -591,7 +591,7 @@ mod tests {
         let schema_text = include_str!("../../../testdata/schema/twist_stamped.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table).unwrap();
 
         let mut expected_msg_definition_table = HashMap::new();
 
@@ -652,7 +652,7 @@ mod tests {
         let schema_text = include_str!("../../../testdata/schema/joint_state.txt");
         let sections = parse_schema_sections(schema_name, schema_text);
         let mut msg_definition_table = HashMap::new();
-        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
+        parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table).unwrap();
 
         let mut expected_msg_definition_table = HashMap::new();
 
