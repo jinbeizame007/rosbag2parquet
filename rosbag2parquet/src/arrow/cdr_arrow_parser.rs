@@ -281,7 +281,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         array_builder: &mut dyn ArrayBuilder,
         length: &u32,
     ) -> Result<()> {
-        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder)?;
         for _ in 0..*length as usize {
             string_builder
                 .values()
@@ -296,7 +296,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         array_builder: &mut dyn ArrayBuilder,
         length: &u32,
     ) -> Result<()> {
-        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        let string_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder)?;
         for _ in 0..*length as usize {
             string_builder
                 .values()
@@ -312,7 +312,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         name: &str,
         length: &u32,
     ) -> Result<()> {
-        let substruct_builder = downcast_fixed_size_list_builder::<StructBuilder>(array_builder);
+        let substruct_builder = downcast_fixed_size_list_builder::<StructBuilder>(array_builder)?;
 
         for _ in 0..*length as usize {
             self.parse_complex(name, substruct_builder)?;
@@ -351,7 +351,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     fn parse_sequence_char(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         let length = self.cdr_deserializer.read_sequence_length()?;
 
-        let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
+        let string_builder = downcast_list_builder::<StringBuilder>(array_builder)?;
         for _ in 0..length as usize {
             string_builder
                 .values()
@@ -364,7 +364,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     fn parse_sequence_string(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         let length = self.cdr_deserializer.read_sequence_length()?;
 
-        let string_builder = downcast_list_builder::<StringBuilder>(array_builder);
+        let string_builder = downcast_list_builder::<StringBuilder>(array_builder)?;
         for _ in 0..length as usize {
             string_builder
                 .values()
@@ -381,7 +381,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     ) -> Result<()> {
         let length = self.cdr_deserializer.read_sequence_length()?;
 
-        let list_builder = downcast_list_builder::<StructBuilder>(array_builder);
+        let list_builder = downcast_list_builder::<StructBuilder>(array_builder)?;
         let substruct_builder = list_builder
             .values()
             .as_any_mut()
@@ -465,7 +465,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     }
 
     fn parse_char(&mut self, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
-        let byte_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder);
+        let byte_builder = downcast_fixed_size_list_builder::<StringBuilder>(array_builder)?;
         byte_builder
             .values()
             .append_value(self.cdr_deserializer.deserialize_char()?.to_string());

@@ -85,61 +85,63 @@ pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
 pub fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
     let any = builder.as_any_mut();
     if any.is::<ListBuilder<BooleanBuilder>>() {
-        any.downcast_mut::<ListBuilder<BooleanBuilder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<BooleanBuilder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<UInt8Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt8Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<UInt8Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<UInt16Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt16Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<UInt16Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<UInt32Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt32Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<UInt32Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<UInt64Builder>>() {
-        any.downcast_mut::<ListBuilder<UInt64Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<UInt64Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Int8Builder>>() {
-        any.downcast_mut::<ListBuilder<Int8Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Int8Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Int16Builder>>() {
-        any.downcast_mut::<ListBuilder<Int16Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Int16Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Int32Builder>>() {
-        any.downcast_mut::<ListBuilder<Int32Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Int32Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Int64Builder>>() {
-        any.downcast_mut::<ListBuilder<Int64Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Int64Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Float32Builder>>() {
-        any.downcast_mut::<ListBuilder<Float32Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Float32Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<Float64Builder>>() {
-        any.downcast_mut::<ListBuilder<Float64Builder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<Float64Builder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<StringBuilder>>() {
-        any.downcast_mut::<ListBuilder<StringBuilder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<StringBuilder>>() {
+            b.append(true);
+        }
     } else if any.is::<ListBuilder<StructBuilder>>() {
-        any.downcast_mut::<ListBuilder<StructBuilder>>()
-            .unwrap()
-            .append(true);
+        if let Some(b) = any.downcast_mut::<ListBuilder<StructBuilder>>() {
+            b.append(true);
+        }
     }
 }
 
-pub fn downcast_list_builder<B>(builder: &mut dyn ArrayBuilder) -> &mut ListBuilder<B>
+pub fn downcast_list_builder<B>(
+    builder: &mut dyn ArrayBuilder,
+) -> crate::error::Result<&mut ListBuilder<B>>
 where
     B: ArrayBuilder,
 {
@@ -147,12 +149,18 @@ where
     builder
         .as_any_mut()
         .downcast_mut::<ListBuilder<B>>()
-        .unwrap()
+        .ok_or_else(|| crate::error::Rosbag2ParquetError::SchemaError {
+            type_name: "unknown".to_string(),
+            message: format!(
+                "Failed to downcast to {}",
+                core::any::type_name::<ListBuilder<B>>()
+            ),
+        })
 }
 
 pub fn downcast_fixed_size_list_builder<B>(
     builder: &mut dyn ArrayBuilder,
-) -> &mut FixedSizeListBuilder<B>
+) -> crate::error::Result<&mut FixedSizeListBuilder<B>>
 where
     B: ArrayBuilder,
 {
@@ -160,7 +168,13 @@ where
     builder
         .as_any_mut()
         .downcast_mut::<FixedSizeListBuilder<B>>()
-        .unwrap()
+        .ok_or_else(|| crate::error::Rosbag2ParquetError::SchemaError {
+            type_name: "unknown".to_string(),
+            message: format!(
+                "Failed to downcast to {}",
+                core::any::type_name::<FixedSizeListBuilder<B>>()
+            ),
+        })
 }
 
 macro_rules! impl_parse_sequence_typed {
@@ -175,7 +189,7 @@ macro_rules! impl_parse_sequence_typed {
                         values.push(self.cdr_deserializer.[<deserialize_$short_name>]()?);
                     }
 
-                    let list_builder = $crate::arrow::core::downcast_list_builder::<$builder_type>(builder);
+                    let list_builder = $crate::arrow::core::downcast_list_builder::<$builder_type>(builder)?;
                     list_builder.values().append_slice(&values);
                     list_builder.append(true);
                     Ok(())

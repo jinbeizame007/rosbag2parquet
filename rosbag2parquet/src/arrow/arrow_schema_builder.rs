@@ -31,13 +31,12 @@ impl<'a> ArrowSchemaBuilder<'a> {
             DataType::Timestamp(TimeUnit::Nanosecond, None),
             true,
         ));
-        fields.extend(
-            message_definition
-                .fields
-                .iter()
-                .map(|field| self.ros_field_to_arrow_field(field))
-                .collect::<Vec<_>>(),
-        );
+        let more_fields: Vec<Field> = message_definition
+            .fields
+            .iter()
+            .map(|field| self.ros_field_to_arrow_field(field))
+            .collect::<Result<Vec<_>>>()?;
+        fields.extend(more_fields);
         Ok(Arc::new(Schema::new(fields)))
     }
 
@@ -49,49 +48,52 @@ impl<'a> ArrowSchemaBuilder<'a> {
         Ok(schemas)
     }
 
-    fn ros_field_to_arrow_field(&self, field: &FieldDefinition<'a>) -> Field {
+    fn ros_field_to_arrow_field(&self, field: &FieldDefinition<'a>) -> Result<Field> {
         let arrow_type = match &field.data_type {
-            FieldType::Base(base_type) => self.ros_base_type_to_arrow_data_type(base_type),
+            FieldType::Base(base_type) => self.ros_base_type_to_arrow_data_type(base_type)?,
             FieldType::Array { data_type, length } => {
-                self.ros_array_type_to_arrow_data_type(data_type, *length)
+                self.ros_array_type_to_arrow_data_type(data_type, *length)?
             }
-            FieldType::Sequence(data_type) => self.ros_sequence_type_to_arrow_data_type(data_type),
+            FieldType::Sequence(data_type) => self.ros_sequence_type_to_arrow_data_type(data_type)?,
         };
 
-        Field::new(field.name, arrow_type, true)
+        Ok(Field::new(field.name, arrow_type, true))
     }
 
-    fn ros_array_type_to_arrow_data_type(&self, data_type: &BaseType, length: u32) -> DataType {
-        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
+    fn ros_array_type_to_arrow_data_type(&self, data_type: &BaseType, length: u32) -> Result<DataType> {
+        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type)?;
 
-        DataType::FixedSizeList(
+        Ok(DataType::FixedSizeList(
             Arc::new(Field::new("item", base_arrow_type, true)),
             length as i32,
-        )
+        ))
     }
 
-    fn ros_sequence_type_to_arrow_data_type(&self, data_type: &BaseType) -> DataType {
-        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type);
+    fn ros_sequence_type_to_arrow_data_type(&self, data_type: &BaseType) -> Result<DataType> {
+        let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type)?;
 
-        DataType::List(Arc::new(Field::new("item", base_arrow_type, true)))
+        Ok(DataType::List(Arc::new(Field::new("item", base_arrow_type, true))))
     }
 
-    fn ros_base_type_to_arrow_data_type(&self, base_type: &BaseType) -> DataType {
+    fn ros_base_type_to_arrow_data_type(&self, base_type: &BaseType) -> Result<DataType> {
         match base_type {
-            BaseType::Primitive(primitive) => self.ros_primitive_to_arrow_data_type(primitive),
+            BaseType::Primitive(primitive) => Ok(self.ros_primitive_to_arrow_data_type(primitive)),
             BaseType::Complex(name) => {
-                let message_definition = self.message_definition_table.get(name.as_str())
-                    .unwrap_or_else(|| panic!(
-                        "Message definition not found for complex type: '{}'. Available types: {:?}",
-                        name,
-                        self.message_definition_table.keys().collect::<Vec<_>>()
-                    ));
-                let fields = message_definition
+                let message_definition = self.message_definition_table.get(name.as_str()).ok_or_else(|| {
+                    Rosbag2ParquetError::SchemaError {
+                        type_name: name.to_string(),
+                        message: format!(
+                            "Message definition not found for complex type. Available types: {:?}",
+                            self.message_definition_table.keys().collect::<Vec<_>>()
+                        ),
+                    }
+                })?;
+                let fields: Vec<Field> = message_definition
                     .fields
                     .iter()
                     .map(|field| self.ros_field_to_arrow_field(field))
-                    .collect();
-                DataType::Struct(fields)
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(DataType::Struct(fields.into()))
             }
         }
     }
