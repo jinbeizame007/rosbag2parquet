@@ -172,10 +172,7 @@ pub fn write_record_batches_to_parquet_with_options<P: AsRef<Utf8Path>>(
     }
 
     for (name, record_batch) in record_batches {
-        let mut rel = name.trim_start_matches('/').to_string();
-        if !rel.ends_with(".parquet") {
-            rel = format!("{rel}.parquet");
-        }
+        let rel = topic_to_rel_file(&name)?;
         let path = Utf8PathBuf::from(root_dir_path.as_ref()).join(rel);
         let dir_path = path.parent().ok_or_else(|| Rosbag2ParquetError::ConfigError {
             message: format!("Invalid path: {}", path),
@@ -269,6 +266,28 @@ fn warn_parse_failure(index: usize, topic_name: &str, err: &dyn std::error::Erro
         "Warning: Failed to parse message {} on topic {}: {}",
         index, topic_name, err
     );
+}
+
+fn topic_to_rel_file(topic_name: &str) -> Result<String> {
+    let trimmed = topic_name.trim_start_matches('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in trimmed.split('/') {
+        if seg.is_empty() {
+            continue;
+        }
+        if seg == "." || seg == ".." {
+            return Err(Rosbag2ParquetError::ConfigError {
+                message: format!("invalid topic segment: {}", seg),
+            });
+        }
+        parts.push(seg);
+    }
+    let rel = if parts.is_empty() {
+        "topic".to_string()
+    } else {
+        parts.join("/")
+    };
+    Ok(format!("{}.parquet", rel))
 }
 
 #[cfg(test)]
@@ -437,6 +456,24 @@ mod tests {
 
         assert_eq!(ros_msg_values.len(), expected_ros_msg_values.len());
         assert_eq!(ros_msg_values, expected_ros_msg_values);
+    }
+
+    #[test]
+    fn test_topic_to_rel_file_reject_parent() {
+        let r = topic_to_rel_file("/one//shot/../imu");
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn test_topic_to_rel_file_keep_chars() {
+        let s = topic_to_rel_file("/foo:bar*<baz>").unwrap();
+        assert_eq!(s, "foo:bar*<baz>.parquet");
+    }
+
+    #[test]
+    fn test_topic_to_rel_file_empty() {
+        let s = topic_to_rel_file("").unwrap();
+        assert_eq!(s, "topic.parquet");
     }
 
     #[test]
