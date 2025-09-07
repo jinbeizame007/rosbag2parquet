@@ -174,9 +174,11 @@ pub fn write_record_batches_to_parquet_with_options<P: AsRef<Utf8Path>>(
     for (name, record_batch) in record_batches {
         let rel = topic_to_rel_file(&name)?;
         let path = Utf8PathBuf::from(root_dir_path.as_ref()).join(rel);
-        let dir_path = path.parent().ok_or_else(|| Rosbag2ParquetError::ConfigError {
-            message: format!("Invalid path: {}", path),
-        })?;
+        let dir_path = path
+            .parent()
+            .ok_or_else(|| Rosbag2ParquetError::ConfigError {
+                message: format!("Invalid path: {}", path),
+            })?;
         if !dir_path.exists() {
             fs::create_dir_all(dir_path)?;
         }

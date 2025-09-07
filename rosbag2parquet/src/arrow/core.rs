@@ -81,8 +81,6 @@ pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     }
 }
 
- 
-
 pub fn downcast_list_builder<B>(
     builder: &mut dyn ArrayBuilder,
 ) -> crate::error::Result<&mut ListBuilder<B>>

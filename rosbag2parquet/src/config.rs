@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::str::FromStr;
 
+use crate::error::{Result, Rosbag2ParquetError};
 use camino::Utf8PathBuf;
 use mcap::Message;
 use parquet::basic::Compression;
-use crate::error::{Result, Rosbag2ParquetError};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CompressionSetting {

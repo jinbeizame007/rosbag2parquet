@@ -54,13 +54,19 @@ impl<'a> ArrowSchemaBuilder<'a> {
             FieldType::Array { data_type, length } => {
                 self.ros_array_type_to_arrow_data_type(data_type, *length)?
             }
-            FieldType::Sequence(data_type) => self.ros_sequence_type_to_arrow_data_type(data_type)?,
+            FieldType::Sequence(data_type) => {
+                self.ros_sequence_type_to_arrow_data_type(data_type)?
+            }
         };
 
         Ok(Field::new(field.name, arrow_type, true))
     }
 
-    fn ros_array_type_to_arrow_data_type(&self, data_type: &BaseType, length: u32) -> Result<DataType> {
+    fn ros_array_type_to_arrow_data_type(
+        &self,
+        data_type: &BaseType,
+        length: u32,
+    ) -> Result<DataType> {
         let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type)?;
 
         Ok(DataType::FixedSizeList(
@@ -72,22 +78,27 @@ impl<'a> ArrowSchemaBuilder<'a> {
     fn ros_sequence_type_to_arrow_data_type(&self, data_type: &BaseType) -> Result<DataType> {
         let base_arrow_type = self.ros_base_type_to_arrow_data_type(data_type)?;
 
-        Ok(DataType::List(Arc::new(Field::new("item", base_arrow_type, true))))
+        Ok(DataType::List(Arc::new(Field::new(
+            "item",
+            base_arrow_type,
+            true,
+        ))))
     }
 
     fn ros_base_type_to_arrow_data_type(&self, base_type: &BaseType) -> Result<DataType> {
         match base_type {
             BaseType::Primitive(primitive) => Ok(self.ros_primitive_to_arrow_data_type(primitive)),
             BaseType::Complex(name) => {
-                let message_definition = self.message_definition_table.get(name.as_str()).ok_or_else(|| {
-                    Rosbag2ParquetError::SchemaError {
+                let message_definition = self
+                    .message_definition_table
+                    .get(name.as_str())
+                    .ok_or_else(|| Rosbag2ParquetError::SchemaError {
                         type_name: name.to_string(),
                         message: format!(
                             "Message definition not found for complex type. Available types: {:?}",
                             self.message_definition_table.keys().collect::<Vec<_>>()
                         ),
-                    }
-                })?;
+                    })?;
                 let fields: Vec<Field> = message_definition
                     .fields
                     .iter()
