@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::error::Result;
-use anyhow::Context;
+use crate::error::{Result, Rosbag2ParquetError};
 use arrow::array::{
     ArrayBuilder, BooleanBuilder, FixedSizeListBuilder, Float32Builder, Float64Builder,
     Int16Builder, Int32Builder, Int64Builder, Int8Builder, StringBuilder, StructBuilder,
@@ -35,11 +34,13 @@ impl<'a> CdrArrowParser<'a> {
             .iter()
             .map(|(topic_name, type_name)| {
                 let schema = schemas.get(type_name.as_str()).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Schema not found during initialization for type: {} (topic: {})",
-                        type_name,
-                        topic_name
-                    )
+                    Rosbag2ParquetError::SchemaError {
+                        type_name: type_name.clone(),
+                        message: format!(
+                            "Schema not found during initialization (topic: {})",
+                            topic_name
+                        ),
+                    }
                 })?;
                 Ok((
                     topic_name.to_string(),
@@ -61,10 +62,11 @@ impl<'a> CdrArrowParser<'a> {
     }
 
     pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) -> Result<()> {
-        let type_name = self
-            .topic_name_type_table
-            .get(&topic_name)
-            .ok_or_else(|| anyhow::anyhow!("Unknown topic: {}", topic_name))?;
+        let type_name = self.topic_name_type_table.get(&topic_name).ok_or_else(|| {
+            Rosbag2ParquetError::TopicNotFound {
+                topic: topic_name.clone(),
+            }
+        })?;
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
             self.msg_definition_table,
@@ -84,24 +86,34 @@ impl<'a> CdrArrowParser<'a> {
             .cloned()
             .collect::<Vec<_>>();
         for name in keys {
-            let type_name = self
-                .topic_name_type_table
-                .get(&name)
-                .ok_or_else(|| anyhow::anyhow!("Type name not found for topic: {}", name))?;
-            let schema = self
-                .schemas
-                .get(type_name.as_str())
-                .ok_or_else(|| anyhow::anyhow!("Schema not found for type: {}", type_name))?;
-            let mut builders = self
-                .array_builders_table
-                .remove(&name)
-                .ok_or_else(|| anyhow::anyhow!("Array builders not found for topic: {}", name))?;
+            let type_name = self.topic_name_type_table.get(&name).ok_or_else(|| {
+                Rosbag2ParquetError::TypeNotFound {
+                    type_name: "unknown".to_string(),
+                    topic: name.clone(),
+                }
+            })?;
+            let schema = self.schemas.get(type_name.as_str()).ok_or_else(|| {
+                Rosbag2ParquetError::SchemaError {
+                    type_name: type_name.clone(),
+                    message: "Schema not found".to_string(),
+                }
+            })?;
+            let mut builders = self.array_builders_table.remove(&name).ok_or_else(|| {
+                Rosbag2ParquetError::SchemaError {
+                    type_name: type_name.clone(),
+                    message: format!("Array builders not found for topic: {}", name),
+                }
+            })?;
             let built_array = builders
                 .iter_mut()
                 .map(|builder| builder.finish())
                 .collect::<Vec<_>>();
-            let batch = RecordBatch::try_new(schema.clone(), built_array)
-                .with_context(|| format!("Failed to create RecordBatch for topic: {}", name))?;
+            let batch = RecordBatch::try_new(schema.clone(), built_array).map_err(|e| {
+                Rosbag2ParquetError::SchemaError {
+                    type_name: type_name.clone(),
+                    message: format!("Failed to create RecordBatch for topic {}: {}", name, e),
+                }
+            })?;
             batches.insert(name.to_string(), batch);
         }
 
@@ -188,20 +200,25 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
         let msg_definition = self
             .msg_definition_table
             .get(self.type_name.as_str())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Message definition not found for type: {}", self.type_name)
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.type_name.clone(),
+                message: "Message definition not found".to_string(),
             })?;
         let mut array_builders = self
             .array_builders_table
             .remove(&self.topic_name)
-            .ok_or_else(|| {
-                anyhow::anyhow!("Array builders not found for topic: {}", self.topic_name)
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.type_name.clone(),
+                message: format!("Array builders not found for topic: {}", self.topic_name),
             })?;
 
         let timestamp_builder = array_builders[0]
             .as_any_mut()
             .downcast_mut::<TimestampNanosecondBuilder>()
-            .ok_or_else(|| anyhow::anyhow!("Failed to downcast timestamp builder"))?;
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.type_name.clone(),
+                message: "Failed to downcast timestamp builder".to_string(),
+            })?;
         timestamp_builder.append_value(self.timestamp_ns);
 
         for (array_builder, field) in array_builders
@@ -369,7 +386,10 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .values()
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
-            .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructBuilder"))?;
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.type_name.clone(),
+                message: "Failed to downcast to StructBuilder".to_string(),
+            })?;
 
         for _ in 0..length as usize {
             self.parse_complex(name, substruct_builder)?;
@@ -392,12 +412,18 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
 
     fn parse_complex(&mut self, name: &str, array_builder: &mut dyn ArrayBuilder) -> Result<()> {
         let msg_definition = self.msg_definition_table.get(name).ok_or_else(|| {
-            anyhow::anyhow!("Message definition not found for complex type: {}", name)
+            Rosbag2ParquetError::SchemaError {
+                type_name: name.to_string(),
+                message: "Message definition not found for complex type".to_string(),
+            }
         })?;
         let struct_builder = array_builder
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
-            .ok_or_else(|| anyhow::anyhow!("Failed to downcast to StructBuilder"))?;
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.type_name.clone(),
+                message: "Failed to downcast to StructBuilder".to_string(),
+            })?;
 
         for (i, field_builder) in struct_builder.field_builders_mut().iter_mut().enumerate() {
             let field = &msg_definition.fields[i];
