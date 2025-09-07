@@ -1,5 +1,5 @@
 use camino::Utf8PathBuf;
-use clap::{Parser, Subcommand};
+use clap::{ValueEnum, Parser, Subcommand};
 use rosbag2parquet::Config;
 
 #[derive(Parser)]
@@ -44,19 +44,118 @@ enum Commands {
         output_dir: Option<Utf8PathBuf>,
 
         /// Compression algorithm to use
+        #[arg(long, value_enum, default_value = "snappy")]
+        compression: CompressionType,
+
+        /// Compression level (only for gzip, brotli, zstd)
         ///
-        /// Available options are:
-        /// - UNCOMPRESSED
-        /// - SNAPPY
-        /// - GZIP(GzipLevel({0 - 9}))
-        /// - LZO
-        /// - BROTLI(BrotliLevel({0 - 11}))
-        /// - LZ4
-        /// - ZSTD(ZstdLevel({1 - 22})):
-        /// - LZ4_RAW
-        #[arg(long, verbatim_doc_comment, default_value = "SNAPPY")]
-        compression: Option<String>,
+        /// Valid ranges:
+        /// - gzip: 0-9 (default: 6)
+        /// - brotli: 0-11 (default: 6)
+        /// - zstd: 1-22 (default: 3)
+        #[arg(long, verbatim_doc_comment)]
+        compression_level: Option<u32>,
     },
+}
+
+/// Compression types supported by the Parquet format
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum CompressionType {
+    /// No compression
+    Uncompressed,
+    /// Snappy compression ( no level support)
+    Snappy,
+    /// Gzip compression (levels 0-9)
+    Gzip,
+    /// LZO compression (no level support)
+    Lzo,
+    /// Brotli compression (levels 0-11)
+    Brotli,
+    /// LZ4 compression (no level support)
+    Lz4,
+    /// Zstandard compression (levels 1-22)
+    Zstd,
+    /// Raw LZ4 compression (no level support)
+    Lz4Raw,
+}
+
+impl CompressionType {
+    fn supports_level(&self) -> bool {
+        matches!(self,
+            CompressionType::Gzip |
+            CompressionType::Brotli |
+            CompressionType::Zstd
+        )
+    }
+
+    fn level_range(&self) -> Option<(u32, u32, u32)> {
+        match self {
+            CompressionType::Gzip => Some((0, 9, 6)),
+            CompressionType::Brotli => Some((0, 11, 6)),
+            CompressionType::Zstd => Some((1, 22, 3)),
+            _ => None,
+        }
+    }
+
+    fn validate_level(&self, level: Option<u32>) -> Result<Option<u32>, String> {
+        match (self.supports_level(), level) {
+            (false, Some(_)) => {
+                Err(format!(
+                    "Compression type '{:?}' does not support compression levels. \
+                    Only gzip, brotli, and zstd support level configuration.",
+                    self
+                ))
+            },
+            (true, Some(l)) => {
+                if let Some((min, max, _)) = self.level_range() {
+                    if l < min || l > max {
+                        Err(format!(
+                            "Invalid compression level {} for {:?}. Valid range is {}-{}.",
+                            l, self, min, max
+                        ))
+                    } else {
+                        Ok(Some(l))
+                    }
+                } else {
+                    Ok(None)
+                }
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn to_parquet_string(&self, level: Option<u32>) -> Result<String, String> {
+        let validated_level = self.validate_level(level)?;
+
+        Ok(match self {
+            CompressionType::Uncompressed => "UNCOMPRESSED".to_string(),
+            CompressionType::Snappy => "SNAPPY".to_string(),
+            CompressionType::Gzip => {
+                if let Some(l) = validated_level {
+                    format!("GZIP({})", l)
+                } else {
+                    "GZIP(6)".to_string()
+                }
+            },
+            CompressionType::Lzo => "LZO".to_string(),
+            CompressionType::Brotli => {
+                if let Some(l) = validated_level {
+                    format!("BROTLI({})", l)
+                } else {
+                    "BROTLI(1)".to_string()
+                }
+            },
+            CompressionType::Lz4 => "LZ4".to_string(),
+            CompressionType::Zstd => {
+                if let Some(l) = validated_level {
+                    format!("ZSTD({})", l)
+                } else {
+                    "ZSTD(3)".to_string()
+                }
+            },
+            CompressionType::Lz4Raw => "LZ4_RAW".to_string(),
+        })
+    }
 }
 
 fn main() {
@@ -71,6 +170,7 @@ fn main() {
             end_time,
             output_dir,
             compression,
+            compression_level,
         } => {
             let topics_set = match topics.is_empty() {
                 true => None,
@@ -87,9 +187,17 @@ fn main() {
                 .set_start_time(start_time)
                 .set_end_time(end_time)
                 .set_output_dir(output_dir);
-            if let Some(compression) = compression {
-                config = config.set_compression_from_str(&compression);
+            
+            match compression.to_parquet_string(compression_level) {
+                Ok(compression_str) => {
+                    config = config.set_compression_from_str(&compression_str);
+                },
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
             }
+            
             rosbag2parquet::rosbag2parquet(&input, config);
             println!("Conversion completed successfully!");
         }

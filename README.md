@@ -49,7 +49,7 @@ rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --start-time 1627720
 rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
 
 # Specify the compression format (SNAPPY by default)
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --compression LZ4
+rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --compression zstd --compression-level 5
 ```
 
 If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
