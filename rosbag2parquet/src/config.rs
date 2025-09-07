@@ -4,6 +4,7 @@ use std::str::FromStr;
 use camino::Utf8PathBuf;
 use mcap::Message;
 use parquet::basic::Compression;
+use crate::error::{Result, Rosbag2ParquetError};
 
 #[derive(Debug, Clone, Copy)]
 pub struct CompressionSetting {
@@ -110,6 +111,18 @@ impl Config {
     pub fn compression(&self) -> CompressionSetting {
         self.compression
     }
+
+    pub fn validate(&self) -> Result<()> {
+        self.message_filter.validate()?;
+        if let Some(output_dir) = &self.output_dir {
+            if output_dir.as_str().is_empty() {
+                return Err(Rosbag2ParquetError::ConfigError {
+                    message: "output_dir must not be empty".to_string(),
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Default for Config {
@@ -165,5 +178,45 @@ impl MessageFilter {
             }
         }
         true
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
+            if start > end {
+                return Err(Rosbag2ParquetError::ConfigError {
+                    message: format!("start_time ({start}) must be <= end_time ({end})"),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_message_filter_validate_ok() {
+        let mut f = MessageFilter::default();
+        f.set_start_time(Some(1));
+        f.set_end_time(Some(1));
+        assert!(f.validate().is_ok());
+    }
+
+    #[test]
+    fn test_message_filter_validate_err() {
+        let mut f = MessageFilter::default();
+        f.set_start_time(Some(2));
+        f.set_end_time(Some(1));
+        let err = f.validate().unwrap_err();
+        let s = err.to_string();
+        assert!(s.contains("start_time"));
+    }
+
+    #[test]
+    fn test_config_validate_output_dir_ok() {
+        let c = Config::default().set_output_dir(Some(Utf8PathBuf::from("out")));
+        assert!(c.validate().is_ok());
     }
 }

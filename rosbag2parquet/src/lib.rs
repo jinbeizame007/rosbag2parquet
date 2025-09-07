@@ -26,6 +26,7 @@ pub use config::{Config, MessageFilter};
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
 pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()> {
+    config.validate()?;
     let record_batches = rosbag2record_batches(path, config.message_filter())?;
     let output_dir = config.output_dir().cloned().unwrap_or_else(|| {
         path.as_ref()
