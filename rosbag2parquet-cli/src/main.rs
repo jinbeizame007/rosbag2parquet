@@ -113,7 +113,7 @@ impl CompressionType {
         }
     }
 
-    fn to_parquet_string(&self, level: Option<u32>) -> Result<String, String> {
+    fn to_parquet_string(self, level: Option<u32>) -> Result<String, String> {
         let validated_level = self.validate_level(level)?;
 
         Ok(match self {
