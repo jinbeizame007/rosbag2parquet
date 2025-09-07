@@ -95,8 +95,15 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             type_name: "unknown".to_string(),
             message: e.to_string(),
         })?;
-    let mut parser =
-        CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas);
+    let mut parser = CdrArrowParser::new(
+        &topic_name_type_table,
+        &msg_definition_table,
+        &mut schemas,
+    )
+    .map_err(|e| Rosbag2ParquetError::SchemaError {
+        type_name: "unknown".to_string(),
+        message: e.to_string(),
+    })?;
     let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
         message: format!("Failed to create message stream: {}", e),
     })?;

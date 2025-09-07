@@ -29,29 +29,33 @@ impl<'a> CdrArrowParser<'a> {
         topic_name_type_table: &'a HashMap<String, String>,
         msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
         schemas: &'a mut HashMap<&'a str, Arc<Schema>>,
-    ) -> Self {
+    ) -> Result<Self> {
         let array_builders_table = topic_name_type_table
             .iter()
             .map(|(topic_name, type_name)| {
-                (
+                let schema = schemas
+                    .get(type_name.as_str())
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "Schema not found during initialization for type: {} (topic: {})",
+                        type_name, topic_name
+                    ))?;
+                Ok((
                     topic_name.to_string(),
-                    schemas
-                        .get(type_name.as_str())
-                        .expect("Schema not found during initialization")
+                    schema
                         .fields()
                         .iter()
                         .map(|field| create_array_builder(field.data_type()))
                         .collect::<Vec<Box<dyn ArrayBuilder>>>(),
-                )
+                ))
             })
-            .collect::<HashMap<String, Vec<Box<dyn ArrayBuilder>>>>();
+            .collect::<Result<HashMap<String, Vec<Box<dyn ArrayBuilder>>>>>()?;
 
-        Self {
+        Ok(Self {
             array_builders_table,
             topic_name_type_table,
             msg_definition_table,
             schemas,
-        }
+        })
     }
 
     pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) -> Result<()> {
