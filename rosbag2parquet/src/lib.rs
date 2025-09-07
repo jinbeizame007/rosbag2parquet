@@ -120,7 +120,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         if schema.data.is_empty() || !topic_name_type_table.contains_key(topic_name) {
             continue;
         }
-        if let Err(e) = parser.parse(topic_name.clone(), &message.data, message.log_time as i64) {
+        if let Err(e) = parser.parse(topic_name, &message.data, message.log_time as i64) {
             eprintln!(
                 "Warning: Failed to parse message {} on topic {}: {}",
                 index, topic_name, e

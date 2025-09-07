@@ -61,17 +61,17 @@ impl<'a> CdrArrowParser<'a> {
         })
     }
 
-    pub fn parse(&mut self, topic_name: String, data: &[u8], timestamp_ns: i64) -> Result<()> {
-        let type_name = self.topic_name_type_table.get(&topic_name).ok_or_else(|| {
+    pub fn parse(&mut self, topic_name: &str, data: &[u8], timestamp_ns: i64) -> Result<()> {
+        let type_name = self.topic_name_type_table.get(topic_name).ok_or_else(|| {
             Rosbag2ParquetError::TopicNotFound {
-                topic: topic_name.clone(),
+                topic: topic_name.to_owned(),
             }
         })?;
         let mut single_message_parser = SingleMessageCdrArrowParser::new(
             &mut self.array_builders_table,
             self.msg_definition_table,
-            topic_name.clone(),
-            type_name.clone(),
+            topic_name,
+            type_name.as_str(),
             data,
             timestamp_ns,
         );
@@ -126,7 +126,7 @@ pub struct SingleMessageCdrArrowParser<'a> {
     msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
     cdr_deserializer: CdrDeserializer<'a>,
     topic_name: String,
-    type_name: String,
+    type_name: &'a str,
     timestamp_ns: i64,
 }
 
@@ -134,8 +134,8 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     pub fn new(
         array_builders_table: &'a mut HashMap<String, Vec<Box<dyn ArrayBuilder>>>,
         msg_definition_table: &'a HashMap<&'a str, MessageDefinition<'a>>,
-        topic_name: String,
-        type_name: String,
+        topic_name: &str,
+        type_name: &'a str,
         data: &'a [u8],
         timestamp_ns: i64,
     ) -> Self {
@@ -143,7 +143,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             array_builders_table,
             msg_definition_table,
             cdr_deserializer: CdrDeserializer::new(data),
-            topic_name,
+            topic_name: topic_name.to_owned(),
             type_name,
             timestamp_ns,
         }
@@ -199,16 +199,16 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
     fn parse_without_header(&mut self) -> Result<()> {
         let msg_definition = self
             .msg_definition_table
-            .get(self.type_name.as_str())
+            .get(self.type_name)
             .ok_or_else(|| Rosbag2ParquetError::SchemaError {
-                type_name: self.type_name.clone(),
+                type_name: self.type_name.to_owned(),
                 message: "Message definition not found".to_string(),
             })?;
         let mut array_builders = self
             .array_builders_table
             .remove(&self.topic_name)
             .ok_or_else(|| Rosbag2ParquetError::SchemaError {
-                type_name: self.type_name.clone(),
+                type_name: self.type_name.to_owned(),
                 message: format!("Array builders not found for topic: {}", self.topic_name),
             })?;
 
@@ -216,7 +216,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .as_any_mut()
             .downcast_mut::<TimestampNanosecondBuilder>()
             .ok_or_else(|| Rosbag2ParquetError::SchemaError {
-                type_name: self.type_name.clone(),
+                type_name: self.type_name.to_owned(),
                 message: "Failed to downcast timestamp builder".to_string(),
             })?;
         timestamp_builder.append_value(self.timestamp_ns);
@@ -387,7 +387,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
             .ok_or_else(|| Rosbag2ParquetError::SchemaError {
-                type_name: self.type_name.clone(),
+                type_name: self.type_name.to_owned(),
                 message: "Failed to downcast to StructBuilder".to_string(),
             })?;
 
@@ -421,7 +421,7 @@ impl<'a> SingleMessageCdrArrowParser<'a> {
             .as_any_mut()
             .downcast_mut::<StructBuilder>()
             .ok_or_else(|| Rosbag2ParquetError::SchemaError {
-                type_name: self.type_name.clone(),
+                type_name: self.type_name.to_owned(),
                 message: "Failed to downcast to StructBuilder".to_string(),
             })?;
 
