@@ -16,6 +16,7 @@ use memmap2::Mmap;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
+use crate::config::CompressionSetting;
 use crate::ros::extract_message_type;
 use crate::ros::CdrRosParser;
 use crate::ros::Message;
@@ -33,7 +34,8 @@ pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()
             .map(|p| p.join("parquet"))
             .unwrap_or_else(|| Utf8PathBuf::from("parquet"))
     });
-    write_record_batches_to_parquet(record_batches, &output_dir)?;
+    let compression = config.compression();
+    write_record_batches_to_parquet_with_options(record_batches, &output_dir, compression)?;
     Ok(())
 }
 
@@ -175,6 +177,42 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
         let file = std::fs::File::create(path)?;
         let props = parquet::file::properties::WriterProperties::builder()
             .set_compression(parquet::basic::Compression::SNAPPY)
+            .build();
+        let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
+            file,
+            record_batch.schema(),
+            Some(props),
+        )?;
+        writer.write(&record_batch)?;
+        writer.close()?;
+    }
+    Ok(())
+}
+
+pub fn write_record_batches_to_parquet_with_options<P: AsRef<Utf8Path>>(
+    record_batches: HashMap<String, RecordBatch>,
+    root_dir_path: P,
+    compression: CompressionSetting,
+) -> Result<()> {
+    if !root_dir_path.as_ref().exists() {
+        fs::create_dir_all(root_dir_path.as_ref())?;
+    }
+
+    for (name, record_batch) in record_batches {
+        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
+        let path = Utf8Path::new(&path_string);
+        let dir_path = path
+            .parent()
+            .ok_or_else(|| Rosbag2ParquetError::ConfigError {
+                message: format!("Invalid path: {}", path_string),
+            })?;
+        if !dir_path.exists() {
+            fs::create_dir_all(dir_path)?;
+        }
+
+        let file = std::fs::File::create(path)?;
+        let props = parquet::file::properties::WriterProperties::builder()
+            .set_compression(compression.kind())
             .build();
         let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
             file,

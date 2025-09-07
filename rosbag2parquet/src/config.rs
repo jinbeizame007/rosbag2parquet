@@ -5,11 +5,31 @@ use camino::Utf8PathBuf;
 use mcap::Message;
 use parquet::basic::Compression;
 
+#[derive(Debug, Clone, Copy)]
+pub struct CompressionSetting {
+    kind: Compression,
+    level: Option<i32>,
+}
+
+impl CompressionSetting {
+    pub fn new(kind: Compression, level: Option<i32>) -> Self {
+        Self { kind, level }
+    }
+
+    pub fn kind(&self) -> Compression {
+        self.kind
+    }
+
+    pub fn level(&self) -> Option<i32> {
+        self.level
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     message_filter: MessageFilter,
     output_dir: Option<Utf8PathBuf>,
-    compression: Compression,
+    compression: CompressionSetting,
 }
 
 impl Config {
@@ -21,7 +41,7 @@ impl Config {
         Self {
             message_filter,
             output_dir,
-            compression,
+            compression: CompressionSetting::new(compression, None),
         }
     }
 
@@ -61,13 +81,23 @@ impl Config {
     }
 
     pub fn set_compression(mut self, compression: Compression) -> Self {
-        self.compression = compression;
+        self.compression = CompressionSetting::new(compression, None);
         self
     }
 
     pub fn set_compression_from_str(mut self, compression: &str) -> Self {
-        self.compression = Compression::from_str(compression).unwrap();
+        self.compression =
+            CompressionSetting::new(Compression::from_str(compression).unwrap(), None);
         self
+    }
+
+    pub fn set_compression_with_level(mut self, kind: Compression, level: Option<i32>) -> Self {
+        self.compression = CompressionSetting::new(kind, level);
+        self
+    }
+
+    pub fn compression(&self) -> CompressionSetting {
+        self.compression
     }
 }
 

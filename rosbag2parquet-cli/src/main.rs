@@ -1,5 +1,6 @@
 use camino::Utf8PathBuf;
 use clap::{Parser, ValueEnum};
+use parquet::basic::{BrotliLevel, Compression as PCompression, GzipLevel, ZstdLevel};
 use rosbag2parquet::Config;
 
 #[derive(Parser)]
@@ -112,39 +113,6 @@ impl CompressionType {
             _ => Ok(None),
         }
     }
-
-    fn to_parquet_string(self, level: Option<u32>) -> Result<String, String> {
-        let validated_level = self.validate_level(level)?;
-
-        Ok(match self {
-            CompressionType::Uncompressed => "UNCOMPRESSED".to_string(),
-            CompressionType::Snappy => "SNAPPY".to_string(),
-            CompressionType::Gzip => {
-                if let Some(l) = validated_level {
-                    format!("GZIP({})", l)
-                } else {
-                    "GZIP(6)".to_string()
-                }
-            }
-            CompressionType::Lzo => "LZO".to_string(),
-            CompressionType::Brotli => {
-                if let Some(l) = validated_level {
-                    format!("BROTLI({})", l)
-                } else {
-                    "BROTLI(1)".to_string()
-                }
-            }
-            CompressionType::Lz4 => "LZ4".to_string(),
-            CompressionType::Zstd => {
-                if let Some(l) = validated_level {
-                    format!("ZSTD({})", l)
-                } else {
-                    "ZSTD(3)".to_string()
-                }
-            }
-            CompressionType::Lz4Raw => "LZ4_RAW".to_string(),
-        })
-    }
 }
 
 fn main() {
@@ -166,15 +134,37 @@ fn main() {
         .set_end_time(cli.end_time)
         .set_output_dir(cli.output_dir);
 
-    match cli.compression.to_parquet_string(cli.compression_level) {
-        Ok(compression_str) => {
-            config = config.set_compression_from_str(&compression_str);
-        }
+    let validated_level = match cli.compression.validate_level(cli.compression_level) {
+        Ok(level) => level,
         Err(e) => {
             eprintln!("Error: {}", e);
             std::process::exit(1);
         }
-    }
+    };
+
+    let kind = match cli.compression {
+        CompressionType::Uncompressed => PCompression::UNCOMPRESSED,
+        CompressionType::Snappy => PCompression::SNAPPY,
+        CompressionType::Gzip => {
+            let l: u32 = validated_level.unwrap_or(6);
+            let lvl = GzipLevel::try_new(l).unwrap_or_else(|_| GzipLevel::try_new(6).unwrap());
+            PCompression::GZIP(lvl)
+        }
+        CompressionType::Lzo => PCompression::LZO,
+        CompressionType::Brotli => {
+            let l: u32 = validated_level.unwrap_or(6);
+            let lvl = BrotliLevel::try_new(l).unwrap_or_else(|_| BrotliLevel::try_new(6).unwrap());
+            PCompression::BROTLI(lvl)
+        }
+        CompressionType::Lz4 => PCompression::LZ4,
+        CompressionType::Zstd => {
+            let l: i32 = validated_level.unwrap_or(3) as i32;
+            let lvl = ZstdLevel::try_new(l).unwrap_or_else(|_| ZstdLevel::try_new(3).unwrap());
+            PCompression::ZSTD(lvl)
+        }
+        CompressionType::Lz4Raw => PCompression::LZ4_RAW,
+    };
+    config = config.set_compression(kind);
 
     match rosbag2parquet::rosbag2parquet(&cli.input, config) {
         Ok(()) => println!("Conversion completed successfully!"),
