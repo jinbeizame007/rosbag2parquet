@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use crate::error::Result;
+use crate::error::{Result, Rosbag2ParquetError};
 
 use super::data::{BaseValue, Field, FieldValue, Message, PrimitiveValue};
 use super::types::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
@@ -40,12 +40,12 @@ impl<'a> SingleMessageCdrRosParser<'a> {
         let msg_definition = self
             .msg_definition_table
             .get(self.name.as_str())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Message definition not found for type: '{}'. Available types: {:?}",
-                    self.name,
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: self.name.clone(),
+                message: format!(
+                    "Message definition not found for type. Available types: {:?}",
                     self.msg_definition_table.keys().collect::<Vec<_>>()
-                )
+                ),
             })?;
 
         for field in msg_definition.fields.iter() {
@@ -112,11 +112,13 @@ impl<'a> SingleMessageCdrRosParser<'a> {
 
     fn parse_complex(&mut self, name: &str) -> Result<Message> {
         let msg_definition = self.msg_definition_table.get(name).ok_or_else(|| {
-            anyhow::anyhow!(
-                "Message definition not found for complex type: '{}'. Available types: {:?}",
-                name,
-                self.msg_definition_table.keys().collect::<Vec<_>>()
-            )
+            Rosbag2ParquetError::SchemaError {
+                type_name: name.to_string(),
+                message: format!(
+                    "Message definition not found for complex type. Available types: {:?}",
+                    self.msg_definition_table.keys().collect::<Vec<_>>()
+                ),
+            }
         })?;
         let mut ros_msg_value = Message {
             name: name.to_string(),

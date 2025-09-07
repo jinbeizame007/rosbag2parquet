@@ -86,9 +86,20 @@ impl Config {
     }
 
     pub fn set_compression_from_str(mut self, compression: &str) -> Self {
-        self.compression =
-            CompressionSetting::new(Compression::from_str(compression).unwrap(), None);
+        if let Ok(kind) = Compression::from_str(compression) {
+            self.compression = CompressionSetting::new(kind, None);
+        }
         self
+    }
+
+    pub fn try_set_compression_from_str(mut self, compression: &str) -> crate::error::Result<Self> {
+        let kind = Compression::from_str(compression).map_err(|e| {
+            crate::error::Rosbag2ParquetError::ConfigError {
+                message: format!("Invalid compression: {}", e),
+            }
+        })?;
+        self.compression = CompressionSetting::new(kind, None);
+        Ok(self)
     }
 
     pub fn set_compression_with_level(mut self, kind: Compression, level: Option<i32>) -> Self {
