@@ -37,19 +37,19 @@ cargo install --path rosbag2parquet-cli
 bash scripts/download_r3live_dataset.bash
 
 # Convert all topics
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap
+rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap
 
 # Convert specific topics
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --topics /livox/imu /livox/lidar
+rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --topics /livox/imu /livox/lidar
 
 # Specify the time range [ns]
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --start-time 1627720595994265000 --end-time 1627720595994542500 
+rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --start-time 1627720595994265000 --end-time 1627720595994542500 
 
 # Specify the output directory
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
+rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
 
 # Specify the compression format (SNAPPY by default)
-rosbag2parquet convert ./testdata/r3live/hku_park_00_0.mcap --compression zstd --compression-level 5
+rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --compression zstd --compression-level 5
 ```
 
 If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.

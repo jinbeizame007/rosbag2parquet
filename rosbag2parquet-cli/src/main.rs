@@ -1,61 +1,53 @@
 use camino::Utf8PathBuf;
-use clap::{ValueEnum, Parser, Subcommand};
+use clap::{Parser, ValueEnum};
 use rosbag2parquet::Config;
 
 #[derive(Parser)]
 #[command(name = "rosbag2parquet")]
 #[command(version, about = "Convert ROS2 bag files to Parquet format")]
 struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
+    /// Path to the MCAP file
+    #[arg()]
+    input: Utf8PathBuf,
 
-#[derive(Subcommand)]
-enum Commands {
-    Convert {
-        /// Path to the MCAP file
-        #[arg()]
-        input: Utf8PathBuf,
-
-        /// Space-separated list of topic to include
-        #[arg(
+    /// Space-separated list of topic to include
+    #[arg(
             long,
             num_args = 1..,
         )]
-        topics: Vec<String>,
+    topics: Vec<String>,
 
-        /// Space-separated list of topic to exclude
-        #[arg(
+    /// Space-separated list of topic to exclude
+    #[arg(
             long,
             num_args = 1..,
         )]
-        exclude: Vec<String>,
+    exclude: Vec<String>,
 
-        /// Start time [ns] of the messages to include
-        #[arg(long)]
-        start_time: Option<u64>,
+    /// Start time [ns] of the messages to include
+    #[arg(long)]
+    start_time: Option<u64>,
 
-        /// End time [ns] of the messages to include
-        #[arg(long)]
-        end_time: Option<u64>,
+    /// End time [ns] of the messages to include
+    #[arg(long)]
+    end_time: Option<u64>,
 
-        /// Output directory for the converted Parquet files
-        #[arg(long)]
-        output_dir: Option<Utf8PathBuf>,
+    /// Output directory for the converted Parquet files
+    #[arg(long)]
+    output_dir: Option<Utf8PathBuf>,
 
-        /// Compression algorithm to use
-        #[arg(long, value_enum, default_value = "snappy")]
-        compression: CompressionType,
+    /// Compression algorithm to use
+    #[arg(long, value_enum, default_value = "snappy")]
+    compression: CompressionType,
 
-        /// Compression level (only for gzip, brotli, zstd)
-        ///
-        /// Valid ranges:
-        /// - gzip: 0-9 (default: 6)
-        /// - brotli: 0-11 (default: 6)
-        /// - zstd: 1-22 (default: 3)
-        #[arg(long, verbatim_doc_comment)]
-        compression_level: Option<u32>,
-    },
+    /// Compression level (only for gzip, brotli, zstd)
+    ///
+    /// Valid ranges:
+    /// - gzip: 0-9 (default: 6)
+    /// - brotli: 0-11 (default: 6)
+    /// - zstd: 1-22 (default: 3)
+    #[arg(long, verbatim_doc_comment)]
+    compression_level: Option<u32>,
 }
 
 /// Compression types supported by the Parquet format
@@ -81,10 +73,9 @@ enum CompressionType {
 
 impl CompressionType {
     fn supports_level(&self) -> bool {
-        matches!(self,
-            CompressionType::Gzip |
-            CompressionType::Brotli |
-            CompressionType::Zstd
+        matches!(
+            self,
+            CompressionType::Gzip | CompressionType::Brotli | CompressionType::Zstd
         )
     }
 
@@ -99,13 +90,11 @@ impl CompressionType {
 
     fn validate_level(&self, level: Option<u32>) -> Result<Option<u32>, String> {
         match (self.supports_level(), level) {
-            (false, Some(_)) => {
-                Err(format!(
-                    "Compression type '{:?}' does not support compression levels. \
+            (false, Some(_)) => Err(format!(
+                "Compression type '{:?}' does not support compression levels. \
                     Only gzip, brotli, and zstd support level configuration.",
-                    self
-                ))
-            },
+                self
+            )),
             (true, Some(l)) => {
                 if let Some((min, max, _)) = self.level_range() {
                     if l < min || l > max {
@@ -119,7 +108,7 @@ impl CompressionType {
                 } else {
                     Ok(None)
                 }
-            },
+            }
             _ => Ok(None),
         }
     }
@@ -136,7 +125,7 @@ impl CompressionType {
                 } else {
                     "GZIP(6)".to_string()
                 }
-            },
+            }
             CompressionType::Lzo => "LZO".to_string(),
             CompressionType::Brotli => {
                 if let Some(l) = validated_level {
@@ -144,7 +133,7 @@ impl CompressionType {
                 } else {
                     "BROTLI(1)".to_string()
                 }
-            },
+            }
             CompressionType::Lz4 => "LZ4".to_string(),
             CompressionType::Zstd => {
                 if let Some(l) = validated_level {
@@ -152,7 +141,7 @@ impl CompressionType {
                 } else {
                     "ZSTD(3)".to_string()
                 }
-            },
+            }
             CompressionType::Lz4Raw => "LZ4_RAW".to_string(),
         })
     }
@@ -161,45 +150,32 @@ impl CompressionType {
 fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Convert {
-            input,
-            topics,
-            exclude,
-            start_time,
-            end_time,
-            output_dir,
-            compression,
-            compression_level,
-        } => {
-            let topics_set = match topics.is_empty() {
-                true => None,
-                false => Some(topics.into_iter().collect()),
-            };
-            let exclude_set = match exclude.is_empty() {
-                true => None,
-                false => Some(exclude.into_iter().collect()),
-            };
+    let topics_set = match cli.topics.is_empty() {
+        true => None,
+        false => Some(cli.topics.into_iter().collect()),
+    };
+    let exclude_set = match cli.exclude.is_empty() {
+        true => None,
+        false => Some(cli.exclude.into_iter().collect()),
+    };
 
-            let mut config = Config::default()
-                .set_include_topic_names(topics_set)
-                .set_exclude_topic_names(exclude_set)
-                .set_start_time(start_time)
-                .set_end_time(end_time)
-                .set_output_dir(output_dir);
-            
-            match compression.to_parquet_string(compression_level) {
-                Ok(compression_str) => {
-                    config = config.set_compression_from_str(&compression_str);
-                },
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    std::process::exit(1);
-                }
-            }
-            
-            rosbag2parquet::rosbag2parquet(&input, config);
-            println!("Conversion completed successfully!");
+    let mut config = Config::default()
+        .set_include_topic_names(topics_set)
+        .set_exclude_topic_names(exclude_set)
+        .set_start_time(cli.start_time)
+        .set_end_time(cli.end_time)
+        .set_output_dir(cli.output_dir);
+
+    match cli.compression.to_parquet_string(cli.compression_level) {
+        Ok(compression_str) => {
+            config = config.set_compression_from_str(&compression_str);
+        }
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
         }
     }
+
+    rosbag2parquet::rosbag2parquet(&cli.input, config);
+    println!("Conversion completed successfully!");
 }
