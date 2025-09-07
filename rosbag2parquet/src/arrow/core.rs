@@ -81,63 +81,7 @@ pub fn create_array_builder(data_type: &DataType) -> Box<dyn ArrayBuilder> {
     }
 }
 
-#[allow(dead_code)]
-pub fn append_empty_list_builder(builder: &mut dyn ArrayBuilder) {
-    let any = builder.as_any_mut();
-    if any.is::<ListBuilder<BooleanBuilder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<BooleanBuilder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<UInt8Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<UInt8Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<UInt16Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<UInt16Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<UInt32Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<UInt32Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<UInt64Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<UInt64Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Int8Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Int8Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Int16Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Int16Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Int32Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Int32Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Int64Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Int64Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Float32Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Float32Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<Float64Builder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<Float64Builder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<StringBuilder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<StringBuilder>>() {
-            b.append(true);
-        }
-    } else if any.is::<ListBuilder<StructBuilder>>() {
-        if let Some(b) = any.downcast_mut::<ListBuilder<StructBuilder>>() {
-            b.append(true);
-        }
-    }
-}
+ 
 
 pub fn downcast_list_builder<B>(
     builder: &mut dyn ArrayBuilder,
