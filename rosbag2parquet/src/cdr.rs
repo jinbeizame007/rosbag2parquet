@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use crate::error::{Result, Rosbag2ParquetError};
 use byteorder::{BigEndian, ByteOrder, LittleEndian};
 
 const CDR_HEADER_SIZE: usize = 4;
@@ -48,12 +48,16 @@ impl<'a> CdrDeserializer<'a> {
     #[inline]
     pub fn next_bytes(&mut self, count: usize) -> Result<&'a [u8]> {
         if self.position + count > self.data.len() {
-            bail!(
-                "Buffer underrun: attempted to read {} bytes at position {}, but only {} bytes available",
-                count,
-                self.position,
-                self.data.len() - self.position
-            );
+            return Err(Rosbag2ParquetError::ParseError {
+                topic: "unknown".to_string(),
+                index: 0,
+                message: format!(
+                    "Buffer underrun: attempted to read {} bytes at position {}, but only {} bytes available",
+                    count,
+                    self.position,
+                    self.data.len() - self.position
+                ),
+            });
         }
         self.position += count;
         Ok(&self.data[self.position - count..self.position])
@@ -175,12 +179,14 @@ impl<'a> CdrDeserializer<'a> {
         };
         std::str::from_utf8(bytes_without_null)
             .map(|s| s.to_string())
-            .map_err(|err| {
-                anyhow::anyhow!(
-                    "Invalid UTF-8 string at position {}: {}",
+            .map_err(|err| Rosbag2ParquetError::ParseError {
+                topic: "unknown".to_string(),
+                index: 0,
+                message: format!(
+                    "Invalid UTF-8 string at offset {}: {}",
                     self.position - byte_length as usize,
                     err
-                )
+                ),
             })
     }
 }
