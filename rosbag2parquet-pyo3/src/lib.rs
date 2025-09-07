@@ -19,22 +19,24 @@ fn convert(
     let utf8_path = Utf8PathBuf::try_from(path)
         .map_err(|e| PyValueError::new_err(format!("Invalid UTF-8 path: {e}")))?;
 
-    let topics_set = match topics.is_some() {
-        true => Some(topics.unwrap().into_iter().collect()),
-        false => None,
-    };
-    let exclude_set = match exclude.is_some() {
-        true => Some(exclude.unwrap().into_iter().collect()),
-        false => None,
-    };
+    let topics_set = topics.map(|v| v.into_iter().collect());
+    let exclude_set = exclude.map(|v| v.into_iter().collect());
 
     py.allow_threads(|| {
+        let output_dir_utf8 = match output_dir {
+            Some(p) => Some(
+                Utf8PathBuf::try_from(p)
+                    .map_err(|e| PyValueError::new_err(format!("Invalid UTF-8 path: {e}")))?,
+            ),
+            None => None,
+        };
+
         let config = Config::default()
             .set_include_topic_names(topics_set)
             .set_exclude_topic_names(exclude_set)
             .set_start_time(start_time)
             .set_end_time(end_time)
-            .set_output_dir(output_dir.map(|p| Utf8PathBuf::try_from(p).unwrap()));
+            .set_output_dir(output_dir_utf8);
         match rosbag2parquet::rosbag2parquet(&utf8_path, config) {
             Ok(()) => Ok(()),
             Err(e) => Err(PyValueError::new_err(format!(

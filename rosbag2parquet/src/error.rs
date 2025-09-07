@@ -37,10 +37,4 @@ pub enum Rosbag2ParquetError {
 
 pub type Result<T> = std::result::Result<T, Rosbag2ParquetError>;
 
-impl From<anyhow::Error> for Rosbag2ParquetError {
-    fn from(err: anyhow::Error) -> Self {
-        Rosbag2ParquetError::ConfigError {
-            message: err.to_string(),
-        }
-    }
-}
+// no From<anyhow::Error> required

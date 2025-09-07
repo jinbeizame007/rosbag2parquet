@@ -69,7 +69,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         }
         if schema.data.is_empty() {
             if !skipped_topic_names.contains(topic_name) {
-                println!("{topic_name} topic is skipped because it has no schema text.");
+                info_topic_skipped(topic_name);
                 skipped_topic_names.insert(topic_name.clone());
             }
             continue;
@@ -121,10 +121,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
             continue;
         }
         if let Err(e) = parser.parse(topic_name, &message.data, message.log_time as i64) {
-            eprintln!(
-                "Warning: Failed to parse message {} on topic {}: {}",
-                index, topic_name, e
-            );
+            warn_parse_failure(index, topic_name, &e);
             continue;
         }
     }
@@ -158,35 +155,11 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
     record_batches: HashMap<String, RecordBatch>,
     root_dir_path: P,
 ) -> Result<()> {
-    if !root_dir_path.as_ref().exists() {
-        fs::create_dir_all(root_dir_path.as_ref())?;
-    }
-
-    for (name, record_batch) in record_batches {
-        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
-        let path = Utf8Path::new(&path_string);
-        let dir_path = path
-            .parent()
-            .ok_or_else(|| Rosbag2ParquetError::ConfigError {
-                message: format!("Invalid path: {}", path_string),
-            })?;
-        if !dir_path.exists() {
-            fs::create_dir_all(dir_path)?;
-        }
-
-        let file = std::fs::File::create(path)?;
-        let props = parquet::file::properties::WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::SNAPPY)
-            .build();
-        let mut writer = parquet::arrow::arrow_writer::ArrowWriter::try_new(
-            file,
-            record_batch.schema(),
-            Some(props),
-        )?;
-        writer.write(&record_batch)?;
-        writer.close()?;
-    }
-    Ok(())
+    write_record_batches_to_parquet_with_options(
+        record_batches,
+        root_dir_path,
+        CompressionSetting::new(parquet::basic::Compression::SNAPPY, None),
+    )
 }
 
 pub fn write_record_batches_to_parquet_with_options<P: AsRef<Utf8Path>>(
@@ -199,18 +172,19 @@ pub fn write_record_batches_to_parquet_with_options<P: AsRef<Utf8Path>>(
     }
 
     for (name, record_batch) in record_batches {
-        let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
-        let path = Utf8Path::new(&path_string);
-        let dir_path = path
-            .parent()
-            .ok_or_else(|| Rosbag2ParquetError::ConfigError {
-                message: format!("Invalid path: {}", path_string),
-            })?;
+        let mut rel = name.trim_start_matches('/').to_string();
+        if !rel.ends_with(".parquet") {
+            rel = format!("{rel}.parquet");
+        }
+        let path = Utf8PathBuf::from(root_dir_path.as_ref()).join(rel);
+        let dir_path = path.parent().ok_or_else(|| Rosbag2ParquetError::ConfigError {
+            message: format!("Invalid path: {}", path),
+        })?;
         if !dir_path.exists() {
             fs::create_dir_all(dir_path)?;
         }
 
-        let file = std::fs::File::create(path)?;
+        let file = std::fs::File::create(&path)?;
         let props = parquet::file::properties::WriterProperties::builder()
             .set_compression(compression.kind())
             .build();
@@ -284,6 +258,17 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     }
 
     Ok(parsed_messages)
+}
+
+fn info_topic_skipped(topic_name: &str) {
+    println!("{topic_name} topic is skipped because it has no schema text.");
+}
+
+fn warn_parse_failure(index: usize, topic_name: &str, err: &dyn std::error::Error) {
+    eprintln!(
+        "Warning: Failed to parse message {} on topic {}: {}",
+        index, topic_name, err
+    );
 }
 
 #[cfg(test)]
