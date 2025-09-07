@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use anyhow::Result;
+use crate::error::{Result, Rosbag2ParquetError};
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 
 use crate::ros::{BaseType, FieldDefinition, FieldType, MessageDefinition, Primitive};
@@ -21,7 +21,10 @@ impl<'a> ArrowSchemaBuilder<'a> {
         let message_definition = self
             .message_definition_table
             .get(name)
-            .ok_or_else(|| anyhow::anyhow!("Message definition not found for type: {}", name))?;
+            .ok_or_else(|| Rosbag2ParquetError::SchemaError {
+                type_name: name.to_string(),
+                message: "Message definition not found".to_string(),
+            })?;
 
         let mut fields = Vec::new();
         fields.push(Field::new(

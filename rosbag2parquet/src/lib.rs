@@ -89,12 +89,7 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
-    let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table)
-        .build_all()
-        .map_err(|e| Rosbag2ParquetError::SchemaError {
-            type_name: "unknown".to_string(),
-            message: e.to_string(),
-        })?;
+    let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table).build_all()?;
     let mut parser = CdrArrowParser::new(
         &topic_name_type_table,
         &msg_definition_table,
