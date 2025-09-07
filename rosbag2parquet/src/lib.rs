@@ -1,7 +1,6 @@
 pub mod arrow;
 pub mod cdr;
 pub mod config;
-pub mod core;
 pub mod error;
 pub mod ros;
 
