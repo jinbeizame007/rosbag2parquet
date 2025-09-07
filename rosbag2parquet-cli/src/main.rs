@@ -11,14 +11,14 @@ struct Cli {
     #[arg()]
     input: Utf8PathBuf,
 
-    /// Space-separated list of topic to include
+    /// A space-separated list of topics to include
     #[arg(
             long,
             num_args = 1..,
         )]
     topics: Vec<String>,
 
-    /// Space-separated list of topic to exclude
+    /// A space-separated list of topics to exclude
     #[arg(
             long,
             num_args = 1..,

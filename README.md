@@ -10,7 +10,7 @@
 
 <div align="center">
 
-A ROS-independent CLI to convert ROS2 bag files (MCAP format) to Apache Parquet.
+A ROS-independent CLI to convert ROS 2 bag files (MCAP format) into Apache Parquet.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/jinbeizame007/rosbag2parquet/ci.yml?style=flat-square)](https://github.com/jinbeizame007/rosbag2parquet/actions/workflows/ci.yml)
 [![LICENSE](https://img.shields.io/badge/LICENSE-MIT-blue?style=flat-square)](https://github.com/jinbeizame007/rosbag2parquet/blob/main/LICENSE)
@@ -43,10 +43,10 @@ Arguments:
 
 Options:
       --topics <TOPICS>...
-          Space-separated list of topic to include
+          A space-separated list of topics to include
 
       --exclude <EXCLUDE>...
-          Space-separated list of topic to exclude
+          A space-separated list of topics to exclude
 
       --start-time <START_TIME>
           Start time [ns] of the messages to include
@@ -139,7 +139,8 @@ cd rosbag2parquet-pyo3
 uv tool install maturin
 maturin build --release
 
-# Install in your project (wheel file is in `rosbag2parquet/target/wheel/` directory)
+# Install the built wheel into your project
+# The wheel file can be found in the `rosbag2parquet/target/wheels/` directory
 uv add path/to/rosbag2parquet-*.whl
 ```
 
