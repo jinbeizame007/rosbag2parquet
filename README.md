@@ -32,6 +32,80 @@ cargo install --path rosbag2parquet-cli
 
 ### Usage
 
+```
+Convert ROS2 bag files to Parquet format
+
+Usage: rosbag2parquet [OPTIONS] <INPUT>
+
+Arguments:
+  <INPUT>
+          Path to the MCAP file
+
+Options:
+      --topics <TOPICS>...
+          Space-separated list of topic to include
+
+      --exclude <EXCLUDE>...
+          Space-separated list of topic to exclude
+
+      --start-time <START_TIME>
+          Start time [ns] of the messages to include
+
+      --end-time <END_TIME>
+          End time [ns] of the messages to include
+
+      --output-dir <OUTPUT_DIR>
+          Output directory for the converted Parquet files
+
+      --compression <COMPRESSION>
+          Compression algorithm to use
+
+          Possible values:
+          - uncompressed: No compression
+          - snappy:       Snappy compression ( no level support)
+          - gzip:         Gzip compression (levels 0-9)
+          - lzo:          LZO compression (no level support)
+          - brotli:       Brotli compression (levels 0-11)
+          - lz4:          LZ4 compression (no level support)
+          - zstd:         Zstandard compression (levels 1-22)
+          - lz4-raw:      Raw LZ4 compression (no level support)
+          
+          [default: snappy]
+
+      --compression-level <COMPRESSION_LEVEL>
+          Compression level (only for gzip, brotli, zstd)
+          
+          Valid ranges:
+          - gzip: 0-9 (default: 6)
+          - brotli: 0-11 (default: 6)
+          - zstd: 1-22 (default: 3)
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+```
+
+If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
+Each parquet file will be saved with a path that corresponds to its topic name.
+
+For example,
+
+```
+r3live
+├── hku_park_00_0.mcap
+└── parquet
+    ├── camera
+    │   └── image_color
+    │       └── compressed.parquet
+    └── livox
+        ├── imu.parquet
+        └── lidar.parquet
+```
+
+### Examples
+
 ```bash
 # Download R3LIVE dataset (only hku_park_00_0.mcap)
 bash scripts/download_r3live_dataset.bash
@@ -50,23 +124,6 @@ rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --output-dir ./parquet
 
 # Specify the compression format (SNAPPY by default)
 rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --compression zstd --compression-level 5
-```
-
-If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
-Each parquet file will be saved with a path that corresponds to its topic name.
-
-For example,
-
-```
-r3live
-├── hku_park_00_0.mcap
-└── parquet
-    ├── camera
-    │   └── image_color
-    │       └── compressed.parquet
-    └── livox
-        ├── imu.parquet
-        └── lidar.parquet
 ```
 
 ## Python
