@@ -11,5 +11,8 @@ fn main() {
     let config = Config::default()
         .set_include_topic_names(Some(topic_names))
         .set_compression_from_str("SNAPPY");
-    rosbag2parquet(&test_path, config);
+    if let Err(e) = rosbag2parquet(&test_path, config) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }

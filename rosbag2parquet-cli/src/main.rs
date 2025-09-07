@@ -176,6 +176,11 @@ fn main() {
         }
     }
 
-    rosbag2parquet::rosbag2parquet(&cli.input, config);
-    println!("Conversion completed successfully!");
+    match rosbag2parquet::rosbag2parquet(&cli.input, config) {
+        Ok(()) => println!("Conversion completed successfully!"),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
 }

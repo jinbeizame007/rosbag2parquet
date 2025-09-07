@@ -3,14 +3,14 @@ pub mod cdr;
 pub mod config;
 pub mod core;
 pub mod ros;
+pub mod error;
 
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
 
-use anyhow::{Context, Result};
 use arrow_array::RecordBatch;
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use mcap::MessageStream;
 use memmap2::Mmap;
 
@@ -19,18 +19,25 @@ use crate::arrow::CdrArrowParser;
 use crate::ros::extract_message_type;
 use crate::ros::CdrRosParser;
 use crate::ros::Message;
+pub use error::{Result, Rosbag2ParquetError};
 
 pub use cdr::Endianness;
 pub use config::{Config, MessageFilter};
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
-pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) {
-    let record_batches = rosbag2record_batches(path, config.message_filter()).unwrap();
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()> {
+    let record_batches = rosbag2record_batches(path, config.message_filter())?;
     let output_dir = config
         .output_dir()
         .cloned()
-        .unwrap_or_else(|| path.as_ref().parent().unwrap().join("parquet"));
-    write_record_batches_to_parquet(record_batches, &output_dir);
+        .unwrap_or_else(|| {
+            path.as_ref()
+                .parent()
+                .map(|p| p.join("parquet"))
+                .unwrap_or_else(|| Utf8PathBuf::from("parquet"))
+        });
+    write_record_batches_to_parquet(record_batches, &output_dir)?;
+    Ok(())
 }
 
 pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
@@ -42,11 +49,16 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
     let mut type_registry = HashMap::new();
     let mut topic_name_type_table = HashMap::new();
     let mut skipped_topic_names = HashSet::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+        message: format!("Failed to create message stream: {}", e),
+    })?;
 
     for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
+            topic: "unknown".to_string(),
+            index,
+            message: format!("Failed to read message: {}", e),
+        })?;
         let Some(schema) = &message.channel.schema else {
             continue;
         };
@@ -77,13 +89,23 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         ros::parse_msg_definition_from_schema_section(&sections, &mut msg_definition_table);
     }
 
-    let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table).build_all()?;
+    let mut schemas = ArrowSchemaBuilder::new(&msg_definition_table)
+        .build_all()
+        .map_err(|e| Rosbag2ParquetError::SchemaError {
+            type_name: "unknown".to_string(),
+            message: e.to_string(),
+        })?;
     let mut parser =
         CdrArrowParser::new(&topic_name_type_table, &msg_definition_table, &mut schemas);
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+        message: format!("Failed to create message stream: {}", e),
+    })?;
     for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
+            topic: "unknown".to_string(),
+            index,
+            message: format!("Failed to read message: {}", e),
+        })?;
 
         if !message_filter.matches(&message) {
             continue;
@@ -106,33 +128,48 @@ pub fn rosbag2record_batches<P: AsRef<Utf8Path>>(
         }
     }
 
-    let record_batches = parser.finish()?;
+    let record_batches = parser
+        .finish()
+        .map_err(|e| Rosbag2ParquetError::SchemaError {
+            type_name: "unknown".to_string(),
+            message: e.to_string(),
+        })?;
 
     Ok(record_batches)
 }
 
 fn read_mcap<P: AsRef<Utf8Path>>(path: P) -> Result<Mmap> {
-    let fd = fs::File::open(path.as_ref()).context("Couldn't open MCap file")?;
-    unsafe { Mmap::map(&fd) }.context("Couldn't map MCap file")
+    let fd = fs::File::open(path.as_ref()).map_err(|e| Rosbag2ParquetError::Io(
+        std::io::Error::new(
+            e.kind(),
+            format!("Couldn't open MCap file '{}': {}", path.as_ref(), e),
+        ),
+    ))?;
+    unsafe { Mmap::map(&fd) }.map_err(|e| Rosbag2ParquetError::Io(std::io::Error::new(
+        e.kind(),
+        format!("Couldn't map MCap file '{}': {}", path.as_ref(), e),
+    )))
 }
 
 pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
     record_batches: HashMap<String, RecordBatch>,
     root_dir_path: P,
-) {
+) -> Result<()> {
     if !root_dir_path.as_ref().exists() {
-        fs::create_dir_all(root_dir_path.as_ref()).unwrap();
+        fs::create_dir_all(root_dir_path.as_ref())?;
     }
 
     for (name, record_batch) in record_batches {
         let path_string = format!("{}/{}.parquet", root_dir_path.as_ref(), name);
         let path = Utf8Path::new(&path_string);
-        let dir_path = path.parent().unwrap();
+        let dir_path = path.parent().ok_or_else(|| Rosbag2ParquetError::ConfigError {
+            message: format!("Invalid path: {}", path_string),
+        })?;
         if !dir_path.exists() {
-            fs::create_dir_all(dir_path).unwrap();
+            fs::create_dir_all(dir_path)?;
         }
 
-        let file = std::fs::File::create(path).unwrap();
+        let file = std::fs::File::create(path)?;
         let props = parquet::file::properties::WriterProperties::builder()
             .set_compression(parquet::basic::Compression::SNAPPY)
             .build();
@@ -140,22 +177,27 @@ pub fn write_record_batches_to_parquet<P: AsRef<Utf8Path>>(
             file,
             record_batch.schema(),
             Some(props),
-        )
-        .unwrap();
-        writer.write(&record_batch).expect("Writing batch failed");
-        writer.close().unwrap();
+        )?;
+        writer.write(&record_batch)?;
+        writer.close()?;
     }
+    Ok(())
 }
 
 pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>> {
     let mcap_file = read_mcap(path)?;
 
     let mut type_registry = HashMap::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+        message: format!("Failed to create message stream: {}", e),
+    })?;
 
     for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
+            topic: "unknown".to_string(),
+            index,
+            message: format!("Failed to read message: {}", e),
+        })?;
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
@@ -173,20 +215,27 @@ pub fn rosbag2ros_msg_values<P: AsRef<Utf8Path>>(path: P) -> Result<Vec<Message>
     }
 
     let mut parsed_messages = Vec::new();
-    let message_stream =
-        MessageStream::new(&mcap_file).context("Failed to create message stream")?;
+    let message_stream = MessageStream::new(&mcap_file).map_err(|e| Rosbag2ParquetError::ConfigError {
+        message: format!("Failed to create message stream: {}", e),
+    })?;
 
     let mut cdr_ros_parser = CdrRosParser::new(&msg_definition_table);
     for (index, message_result) in message_stream.enumerate() {
-        let message = message_result.with_context(|| format!("Failed to read message {index}"))?;
+        let message = message_result.map_err(|e| Rosbag2ParquetError::ParseError {
+            topic: "unknown".to_string(),
+            index,
+            message: format!("Failed to read message: {}", e),
+        })?;
 
         if let Some(schema) = &message.channel.schema {
             let type_name = extract_message_type(&schema.name).to_string();
-            let parsed_message = cdr_ros_parser
-                .parse(&type_name, &message.data)
-                .with_context(|| {
-                    format!("Failed to parse message {} with type {}", index, type_name)
-                })?;
+            let parsed_message = cdr_ros_parser.parse(&type_name, &message.data).map_err(|e| {
+                Rosbag2ParquetError::ParseError {
+                    topic: "unknown".to_string(),
+                    index,
+                    message: format!("Failed to parse message with type {}: {}", type_name, e),
+                }
+            })?;
             parsed_messages.push(parsed_message);
         }
     }
@@ -206,6 +255,22 @@ mod tests {
 
     use super::*;
     use crate::ros::test_helpers::*;
+
+    #[test]
+    fn test_rosbag2record_batches_invalid_file() {
+        let result = rosbag2record_batches(&"nonexistent.mcap", &MessageFilter::default());
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(msg.contains("Couldn't open MCap file"));
+    }
+
+    #[test]
+    fn test_write_record_batches_invalid_path() {
+        use std::collections::HashMap;
+        let empty_batches: HashMap<String, RecordBatch> = HashMap::new();
+        let result = write_record_batches_to_parquet(empty_batches, "/invalid\0path/");
+        assert!(result.is_err());
+    }
 
     fn assert_struct_field_equals<T>(struct_array: &StructArray, field_name: &str, expected: T)
     where
@@ -473,7 +538,8 @@ mod tests {
             StringArray::from(vec!["Hello, World!"]),
         );
 
-        write_record_batches_to_parquet(record_batches, "../testdata/base_msgs/parquet");
+        write_record_batches_to_parquet(record_batches, "../testdata/base_msgs/parquet")
+            .expect("Failed to write Parquet files in test");
     }
 
     #[test]
@@ -659,7 +725,8 @@ mod tests {
         ]);
         assert_list_equals(joint_state_batch, "effort", expected_effort_array);
 
-        write_record_batches_to_parquet(record_batches, "../testdata/array_msgs/parquet");
+        write_record_batches_to_parquet(record_batches, "../testdata/array_msgs/parquet")
+            .expect("Failed to write Parquet files in test");
     }
 
     #[ignore]
