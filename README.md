@@ -22,7 +22,7 @@ A ROS-independent CLI to convert ROS 2 bag files (MCAP format) into Apache Parqu
 
 ## Why Parquet?
 
-MCAP files are optimized for recording, but not for analytics. Apache Parquet is an open-source, columnar, binary file format built for efficient analytics. It bridges the gap between ROS and the modern data analytics ecosystem.
+MCAP files are optimized for recording, but not for analytics. [Apache Parquet](https://parquet.apache.org/) is an open-source, columnar, binary file format built for efficient analytics. It bridges the gap between ROS and the modern data analytics ecosystem.
 
 - ⚡️ **Fast Queries**
     - Within the Parquet file for each ROS topic, data is stored column-by-column. This allows you to query specific fields of a topic without reading entire ROS messages. This columnar approach dramatically reduces I/O and accelerates data retrieval.
