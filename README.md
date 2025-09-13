@@ -48,11 +48,11 @@ cargo install --path rosbag2parquet-cli
 ```
 Convert ROS2 bag files to Parquet format
 
-Usage: rosbag2parquet [OPTIONS] <INPUT>
+Usage: rosbag2parquet [OPTIONS] [INPUTS]...
 
 Arguments:
-  <INPUT>
-          Path to the MCAP file
+  [INPUTS]...
+          MCAP file paths or a directory containing MCAP files
 
 Options:
       --topics <TOPICS>...
@@ -82,16 +82,21 @@ Options:
           - lz4:          LZ4 compression (no level support)
           - zstd:         Zstandard compression (levels 1-22)
           - lz4-raw:      Raw LZ4 compression (no level support)
-          
+
           [default: snappy]
 
       --compression-level <COMPRESSION_LEVEL>
           Compression level (only for gzip, brotli, zstd)
-          
+
           Valid ranges:
           - gzip: 0-9 (default: 6)
           - brotli: 0-11 (default: 6)
           - zstd: 1-22 (default: 3)
+
+      --threads <THREADS>
+          Number of threads to use
+
+          If not specified, the number of threads will be automatically determined.
 
   -h, --help
           Print help (see a summary with '-h')
@@ -100,8 +105,8 @@ Options:
           Print version
 ```
 
-If the output directory is not provided, *rosbag2parquet* will create a `parquet` directory in the same location as the mcap file.
-Each parquet file will be saved with a path that corresponds to its topic name.
+If no output directory is specified, *rosbag2parquet* creates a `parquet` directory in the same location as the input MCAP file.
+Each parquet file is saved with a path that corresponds to its topic name.
 
 For example,
 
@@ -117,6 +122,31 @@ r3live
         └── lidar.parquet
 ```
 
+If multiple MCAP files or a directory containing MCAP files are specified, *rosbag2parquet* creates a `parquet` directory alongside each MCAP file.
+Each parquet file is organized in subdirectories named after the source MCAP files, with the file structure based on topic names.
+
+For example,
+
+```
+parquet
+├── array_msgs_0
+│   └── one_shot
+│       ├── imu.parquet
+│       └── joint_state.parquet
+├── base_msgs_0
+│   └── one_shot
+│       ├── string.parquet
+│       ├── twist.parquet
+│       └── vector3.parquet
+├── hku_park_00_0
+│   ├── camera
+│   │   └── image_color
+│   │       └── compressed.parquet
+│   └── livox
+│       ├── imu.parquet
+│       └── lidar.parquet
+```
+
 ### Examples
 
 ```bash
@@ -125,6 +155,12 @@ bash scripts/download_r3live_dataset.bash
 
 # Convert all topics
 rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap
+
+# Convert mutiple rosbags in parallel
+rosbag2parquet ./testdata/array_msgs/array_msgs_0.mcap ./testdata/base_msgs/base_msgs_0.mcap
+
+# Convert all rosbags included in a directory in parallel
+rosbag2parquet ./testdata
 
 # Convert specific topics
 rosbag2parquet ./testdata/r3live/hku_park_00_0.mcap --topics /livox/imu /livox/lidar

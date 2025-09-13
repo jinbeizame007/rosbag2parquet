@@ -31,6 +31,7 @@ pub struct Config {
     message_filter: MessageFilter,
     output_dir: Option<Utf8PathBuf>,
     compression: CompressionSetting,
+    threads: Option<usize>,
 }
 
 impl Config {
@@ -38,11 +39,13 @@ impl Config {
         message_filter: MessageFilter,
         output_dir: Option<Utf8PathBuf>,
         compression: Compression,
+        threads: Option<usize>,
     ) -> Self {
         Self {
             message_filter,
             output_dir,
             compression: CompressionSetting::new(compression, None),
+            threads,
         }
     }
 
@@ -52,6 +55,10 @@ impl Config {
 
     pub fn output_dir(&self) -> Option<&Utf8PathBuf> {
         self.output_dir.as_ref()
+    }
+
+    pub fn threads(&self) -> Option<usize> {
+        self.threads
     }
 
     pub fn set_include_topic_names(mut self, include_topic_names: Option<HashSet<String>>) -> Self {
@@ -78,6 +85,11 @@ impl Config {
 
     pub fn set_output_dir(mut self, output_dir: Option<Utf8PathBuf>) -> Self {
         self.output_dir = output_dir;
+        self
+    }
+
+    pub fn set_threads(mut self, threads: Option<usize>) -> Self {
+        self.threads = threads;
         self
     }
 
@@ -127,7 +139,7 @@ impl Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new(MessageFilter::default(), None, Compression::SNAPPY)
+        Self::new(MessageFilter::default(), None, Compression::SNAPPY, None)
     }
 }
 

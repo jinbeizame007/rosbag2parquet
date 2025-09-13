@@ -7,9 +7,9 @@ use rosbag2parquet::Config;
 #[command(name = "rosbag2parquet")]
 #[command(version, about = "Convert ROS2 bag files to Parquet format")]
 struct Cli {
-    /// Path to the MCAP file
-    #[arg()]
-    input: Utf8PathBuf,
+    /// MCAP file paths or a directory containing MCAP files
+    #[arg(num_args = 1..)]
+    inputs: Vec<Utf8PathBuf>,
 
     /// A space-separated list of topics to include
     #[arg(
@@ -49,6 +49,12 @@ struct Cli {
     /// - zstd: 1-22 (default: 3)
     #[arg(long, verbatim_doc_comment)]
     compression_level: Option<u32>,
+
+    /// Number of threads to use
+    ///
+    /// If not specified, the number of threads will be automatically determined.
+    #[arg(long)]
+    threads: Option<usize>,
 }
 
 /// Compression types supported by the Parquet format
@@ -132,7 +138,8 @@ fn main() {
         .set_exclude_topic_names(exclude_set)
         .set_start_time(cli.start_time)
         .set_end_time(cli.end_time)
-        .set_output_dir(cli.output_dir);
+        .set_output_dir(cli.output_dir)
+        .set_threads(cli.threads);
 
     let validated_level = match cli.compression.validate_level(cli.compression_level) {
         Ok(level) => level,
@@ -166,7 +173,7 @@ fn main() {
     };
     config = config.set_compression(kind);
 
-    match rosbag2parquet::rosbag2parquet(&cli.input, config) {
+    match rosbag2parquet::rosbag2parquet(&cli.inputs, config) {
         Ok(()) => println!("Conversion completed successfully!"),
         Err(e) => {
             eprintln!("Error: {}", e);

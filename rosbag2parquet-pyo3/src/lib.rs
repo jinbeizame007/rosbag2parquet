@@ -37,7 +37,7 @@ fn convert(
             .set_start_time(start_time)
             .set_end_time(end_time)
             .set_output_dir(output_dir_utf8);
-        match rosbag2parquet::rosbag2parquet(&utf8_path, config) {
+        match rosbag2parquet::rosbag2parquet(&[utf8_path], config) {
             Ok(()) => Ok(()),
             Err(e) => Err(PyValueError::new_err(format!(
                 "rosbag2parquet failed: {}",

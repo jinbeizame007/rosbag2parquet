@@ -4,14 +4,15 @@ pub mod config;
 pub mod error;
 pub mod ros;
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::fs;
-
 use arrow_array::RecordBatch;
 use camino::{Utf8Path, Utf8PathBuf};
 use mcap::MessageStream;
 use memmap2::Mmap;
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::fs;
+use walkdir::WalkDir;
 
 use crate::arrow::ArrowSchemaBuilder;
 use crate::arrow::CdrArrowParser;
@@ -25,7 +26,97 @@ pub use cdr::Endianness;
 pub use config::{Config, MessageFilter};
 pub use ros::{BaseValue, FieldValue, PrimitiveValue};
 
-pub fn rosbag2parquet<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()> {
+pub fn rosbag2parquet<P: AsRef<Utf8Path>>(paths: &[P], config: Config) -> Result<()> {
+    config.validate()?;
+
+    if paths.is_empty() {
+        return Err(Rosbag2ParquetError::ConfigError {
+            message: "At least one path is required.".to_string(),
+        });
+    }
+
+    let results = if paths.len() == 1 && paths[0].as_ref().is_dir() {
+        rosbag2parquet_parallel_from_dir(&paths[0], config)
+    } else {
+        rosbag2parquet_parallel(paths, config)
+    }?;
+
+    if let Some(err) = results.into_iter().find_map(|r| r.err()) {
+        return Err(err);
+    }
+    Ok(())
+}
+
+pub fn rosbag2parquet_parallel_from_dir<P: AsRef<Utf8Path>>(
+    dir: &P,
+    config: Config,
+) -> Result<Vec<Result<()>>> {
+    config.validate()?;
+    let paths = find_rosbags_recursive(dir.as_ref())?;
+    rosbag2parquet_parallel(&paths, config)
+}
+
+fn find_rosbags_recursive(path: &Utf8Path) -> Result<Vec<Utf8PathBuf>> {
+    let mut rosbag_paths = Vec::new();
+
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        let entry_path = Utf8PathBuf::from_path_buf(entry.into_path()).map_err(|p| {
+            Rosbag2ParquetError::ConfigError {
+                message: format!("Invalid UTF-8 path found: {:?}", p),
+            }
+        })?;
+
+        if entry_path.is_file() && entry_path.extension() == Some("mcap") {
+            rosbag_paths.push(entry_path);
+        }
+    }
+
+    Ok(rosbag_paths)
+}
+
+pub fn rosbag2parquet_parallel<P: AsRef<Utf8Path>>(
+    paths: &[P],
+    config: Config,
+) -> Result<Vec<Result<()>>> {
+    for path in paths {
+        if path.as_ref().is_dir() {
+            return Err(Rosbag2ParquetError::ConfigError {
+                message: "Paths should be files if multiple paths are provided".to_string(),
+            });
+        }
+    }
+
+    config.validate()?;
+    let root_output_dir = config
+        .output_dir()
+        .cloned()
+        .unwrap_or_else(|| Utf8PathBuf::from("parquet"));
+
+    if let Some(threads) = config.threads() {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+            .map_err(|e| Rosbag2ParquetError::ConfigError {
+                message: format!("Failed to build thread pool: {e}"),
+            })?;
+    }
+
+    let path_bufs: Vec<Utf8PathBuf> = paths.iter().map(|p| p.as_ref().to_path_buf()).collect();
+
+    let results = path_bufs
+        .par_iter()
+        .map(|path| {
+            let mut single_rosbag_config = config.clone();
+            let dir = root_output_dir.clone().join(path.file_stem().unwrap());
+
+            single_rosbag_config = single_rosbag_config.set_output_dir(Some(dir));
+            rosbag2parquet_single(path, single_rosbag_config)
+        })
+        .collect::<Vec<_>>();
+    Ok(results)
+}
+
+pub fn rosbag2parquet_single<P: AsRef<Utf8Path>>(path: &P, config: Config) -> Result<()> {
     config.validate()?;
     let record_batches = rosbag2record_batches(path, config.message_filter())?;
     let output_dir = config.output_dir().cloned().unwrap_or_else(|| {
