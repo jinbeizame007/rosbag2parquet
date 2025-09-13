@@ -121,13 +121,13 @@ parquet
 │       ├── string.parquet
 │       ├── twist.parquet
 │       └── vector3.parquet
-├── hku_park_00_0
-│   ├── camera
-│   │   └── image_color
-│   │       └── compressed.parquet
-│   └── livox
-│       ├── imu.parquet
-│       └── lidar.parquet
+└── hku_park_00_0
+    ├── camera
+    │   └── image_color
+    │       └── compressed.parquet
+    └── livox
+        ├── imu.parquet
+        └── lidar.parquet
 ```
 
 ### Examples
