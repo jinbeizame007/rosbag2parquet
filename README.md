@@ -105,24 +105,7 @@ Options:
           Print version
 ```
 
-If no output directory is specified, *rosbag2parquet* creates a `parquet` directory in the same location as the input MCAP file.
-Each parquet file is saved with a path that corresponds to its topic name.
-
-For example,
-
-```
-r3live
-├── hku_park_00_0.mcap
-└── parquet
-    ├── camera
-    │   └── image_color
-    │       └── compressed.parquet
-    └── livox
-        ├── imu.parquet
-        └── lidar.parquet
-```
-
-If multiple MCAP files or a directory containing MCAP files are specified, *rosbag2parquet* creates a `parquet` directory alongside each MCAP file.
+If no output directory is specified, *rosbag2parquet* creates a `parquet` directory under the current directory.
 Each parquet file is organized in subdirectories named after the source MCAP files, with the file structure based on topic names.
 
 For example,
